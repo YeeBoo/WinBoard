@@ -1,13 +1,9 @@
 /*
  * zippy.c -- Implements Zippy the Pinhead chess player on ICS in XBoard
+ * $Id: zippy.c,v 2.2 2003/11/25 05:25:20 mann Exp $
  *
- * Copyright 1991 by Digital Equipment Corporation, Maynard,
- * Massachusetts.
- *
- * Enhancements Copyright 1992-2001, 2002, 2003, 2004, 2005, 2006,
- * 2007, 2008, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
- *
- * Enhancements Copyright 2005 Alessandro Scotti
+ * Copyright 1991 by Digital Equipment Corporation, Maynard, Massachusetts.
+ * Enhancements Copyright 1992-2001 Free Software Foundation, Inc.
  *
  * The following terms apply to Digital Equipment Corporation's copyright
  * interest in XBoard:
@@ -31,25 +27,24 @@
  * SOFTWARE.
  * ------------------------------------------------------------------------
  *
- * The following terms apply to the enhanced version of XBoard
- * distributed by the Free Software Foundation:
+ * The following terms apply to the enhanced version of XBoard distributed
+ * by the Free Software Foundation:
  * ------------------------------------------------------------------------
- *
- * GNU XBoard is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or (at
- * your option) any later version.
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * GNU XBoard is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses/.
- *
- *------------------------------------------------------------------------
- ** See the file ChangeLog for a revision history.  */
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ * ------------------------------------------------------------------------
+ */
 
 #include "config.h"
 
@@ -93,20 +88,12 @@ extern char *getenv();
 #include "backend.h"
 #include "backendz.h"
 
-char *SendMoveToBookUser P((int nr, ChessProgramState *cps, int initial)); // [HGM] book
-void HandleMachineMove P((char *message, ChessProgramState *cps));
-
 static char zippyPartner[MSG_SIZ];
 static char zippyLastOpp[MSG_SIZ];
-static char zippyOffender[MSG_SIZ]; // [HGM] aborter
 static int zippyConsecGames;
 static time_t zippyLastGameEnd;
 
-extern void mysrandom(unsigned int seed);
-extern int myrandom(void);
-
-void
-ZippyInit ()
+void ZippyInit()
 {
     char *p;
 
@@ -147,7 +134,7 @@ ZippyInit ()
     if ( p != NULL ) {
       appData.zippyAcceptOnly = p;
     }
-
+    
     /* Should Zippy use "i" command? */
     /* Defaults to 1=true */
     p = getenv("ZIPPYUSEI");
@@ -200,7 +187,7 @@ ZippyInit ()
     if (p != NULL) {
       appData.zippyVariants = p;
     }
-    safeStrCpy(first.variants, appData.zippyVariants, sizeof(first.variants)/sizeof(first.variants[0]));
+    strcpy(first.variants, appData.zippyVariants);
 
     srandom(time(NULL));
 }
@@ -210,7 +197,7 @@ ZippyInit ()
  */
 
 
-char *swifties[] = {
+char *swifties[] = { 
     "i acclaims:", "i admonishes:", "i advertises:", "i advises:",
     "i advocates:", "i affirms:", "i alleges:", "i anathematizes:",
     "i animadverts:", "i announces:", "i apostrophizes:",
@@ -240,8 +227,7 @@ char *swifties[] = {
     "i enthuses:", "i entreats:", "i enunciates:", "i eulogizes:",
     "i exclaims:", "i execrates:", "i exhorts:", "i expatiates:",
     "i explains:", "i explicates:", "i explodes:", "i exposes:",
-    "i exposits:", "i expostulates: ",
-    "i expounds:", "i expresses:", "i extols:",
+    "i exposits:", "i expounds:", "i expresses:", "i extols:",
     "i exults:", "i fantasizes:", "i fibs:", "i filibusters:",
     "i flatters:", "i flutes:", "i fools:", "i free-associates:",
     "i fulminates:", "i gabbles:", "i gabs:", "i gasps:",
@@ -252,7 +238,7 @@ char *swifties[] = {
     "i hosannas:", "i howls:", "i hums:", "i hypothecates:",
     "i hypothesizes:", "i imagines:", "i implies:", "i implores:",
     "i imprecates:", "i indicates:", "i infers:",
-    "i informs everyone:",  "i instructs:", "i interjects:",
+    "i informs everyone:",  "i instructs:", "i interjects:", 
     "i interposes:", "i intimates:", "i intones:", "i introspects:",
     "i inveighs:", "i jabbers:", "i japes:", "i jests:", "i jibes:",
     "i jives:", "i jokes:", "i joshes:", "i keens:", "i laments:",
@@ -305,8 +291,8 @@ char *swifties[] = {
 
 #define MAX_SPEECH 250
 
-void
-Speak (char *how, char *whom)
+void Speak(how, whom) 
+     char *how, *whom;
 {
     static FILE *zipfile = NULL;
     static struct stat zipstat;
@@ -315,7 +301,8 @@ Speak (char *how, char *whom)
     time_t now;
     char  *p;
     int c, speechlen;
-
+    Boolean done;
+		
     if (strcmp(how, "shout") == 0) {
 	now = time((time_t *) NULL);
 	if (now - lastShout < 1*60) return;
@@ -334,7 +321,7 @@ Speak (char *how, char *whom)
 	}
 	fstat(fileno(zipfile), &zipstat);
     }
-
+		
     for (;;) {
 	fseek(zipfile, (unsigned) random() % zipstat.st_size, 0);
 	do {
@@ -345,10 +332,11 @@ Speak (char *how, char *whom)
 	if (c == EOF) continue;
 	break;
     }
+    done = FALSE;
 
     /* Don't use ics_prefix; we need to let FICS expand the alias i -> it,
        but use the real command "i" on ICC */
-    safeStrCpy(zipbuf, how, sizeof(zipbuf)/sizeof(zipbuf[0]));
+    strcpy(zipbuf, how);
     strcat(zipbuf, " ");
     if (whom != NULL) {
 	strcat(zipbuf, whom);
@@ -380,8 +368,8 @@ Speak (char *how, char *whom)
     Speak(how, whom);  /* tail recursion */
 }
 
-int
-ZippyCalled (char *str)
+int ZippyCalled(str)
+     char *str;
 {
     return ics_handle[0] != NULLCHAR && StrCaseStr(str, ics_handle) != NULL;
 }
@@ -389,40 +377,27 @@ ZippyCalled (char *str)
 static char opp_name[128][32];
 static int num_opps=0;
 
-extern ColorClass curColor;
-
-static void
-SetCurColor (ColorClass color)
-{
-    curColor = color;
-}
-
-static void
-ColorizeEx (ColorClass color, int cont)
-{
-    if( appData.colorize ) {
-        Colorize( color, cont );
-        SetCurColor( color );
-    }
-}
-
-int
-ZippyControl (char *buf, int *i)
+int ZippyControl(buf, i)
+     char *buf;
+     int *i;
 {
     char *player, *p;
     char reply[MSG_SIZ];
 
+#if TRIVIA
+#include "trivia.c"
+#endif
+
     /* Possibly reject Crafty as opponent */
     if (appData.zippyPlay && appData.zippyNoplayCrafty && forwardMostMove < 4
-	&& looking_at(buf, i, "* kibitzes: Hello from Crafty"))
-    {
+	&& looking_at(buf, i, "* kibitzes: Hello from Crafty")) {
         player = StripHighlightAndTitle(star_match[0]);
 	if ((gameMode == IcsPlayingWhite &&
 	     StrCaseCmp(player, gameInfo.black) == 0) ||
 	    (gameMode == IcsPlayingBlack &&
 	     StrCaseCmp(player, gameInfo.white) == 0)) {
 
-	  snprintf(reply, MSG_SIZ, "%ssay This computer does not play Crafty clones\n%sabort\n%s+noplay %s\n",
+	  sprintf(reply, "%ssay This computer does not play Crafty clones\n%sabort\n%s+noplay %s\n",
 		  ics_prefix, ics_prefix, ics_prefix, player);
 	  SendToICS(reply);
 	}
@@ -431,38 +406,38 @@ ZippyControl (char *buf, int *i)
 
     /* If this is a computer, save the name.  Then later, once the */
     /* game is really started, we will send the "computer" notice to */
-    /* the engine.  */
+    /* the engine.  */ 
     if (appData.zippyPlay &&
 	looking_at(buf, i, "* is in the computer list")) {
 	int i;
 	for (i=0;i<num_opps;i++)
 	  if (!strcmp(opp_name[i],star_match[0])) break;
-	if (i >= num_opps) safeStrCpy(opp_name[num_opps++],star_match[0], sizeof(opp_name[num_opps])/sizeof(opp_name[num_opps][0]));
+	if (i >= num_opps) strcpy(opp_name[num_opps++],star_match[0]);
     }
     if (appData.zippyPlay && looking_at(buf, i, "* * is a computer *")) {
 	int i;
 	for (i=0;i<num_opps;i++)
 	  if (!strcmp(opp_name[i],star_match[1])) break;
-	if (i >= num_opps) safeStrCpy(opp_name[num_opps++],star_match[1], sizeof(opp_name[num_opps])/sizeof(opp_name[num_opps][0]));
+	if (i >= num_opps) strcpy(opp_name[num_opps++],star_match[1]);
     }
 
     /* Tells and says */
-    if (appData.zippyPlay &&
+    if (appData.zippyPlay && 
 	(looking_at(buf, i, "* offers to be your bughouse partner") ||
 	 looking_at(buf, i, "* tells you: [automatic message] I chose you"))) {
 	player = StripHighlightAndTitle(star_match[0]);
 	if (appData.zippyBughouse > 1 && first.initDone) {
-	    snprintf(reply, MSG_SIZ,"%spartner %s\n", ics_prefix, player);
+	    sprintf(reply, "%spartner %s\n", ics_prefix, player);
 	    SendToICS(reply);
 	    if (strcmp(zippyPartner, player) != 0) {
-	      safeStrCpy(zippyPartner, player, sizeof(zippyPartner)/sizeof(zippyPartner[0]));
-	      SendToProgram(reply + strlen(ics_prefix), &first);
+		strcpy(zippyPartner, player);
+		SendToProgram(reply + strlen(ics_prefix), &first);
 	    }
 	} else if (appData.zippyBughouse > 0) {
-	    snprintf(reply, MSG_SIZ, "%sdecline %s\n", ics_prefix, player);
+	    sprintf(reply, "%sdecline %s\n", ics_prefix, player);
 	    SendToICS(reply);
 	} else {
-	  snprintf(reply, MSG_SIZ, "%stell %s This computer cannot play bughouse\n",
+	    sprintf(reply, "%stell %s This computer cannot play bughouse\n",
 		    ics_prefix, player);
 	    SendToICS(reply);
 	}
@@ -472,10 +447,10 @@ ZippyControl (char *buf, int *i)
     if (appData.zippyPlay && appData.zippyBughouse && first.initDone &&
 	looking_at(buf, i, "* agrees to be your partner")) {
 	player = StripHighlightAndTitle(star_match[0]);
-	snprintf(reply, MSG_SIZ, "partner %s\n", player);
+	sprintf(reply, "partner %s\n", player);
 	if (strcmp(zippyPartner, player) != 0) {
-	  safeStrCpy(zippyPartner, player, sizeof(zippyPartner)/sizeof(zippyPartner[0]));
-	  SendToProgram(reply, &first);
+	    strcpy(zippyPartner, player);
+	    SendToProgram(reply, &first);
 	}
 	return TRUE;
     }
@@ -506,18 +481,17 @@ ZippyControl (char *buf, int *i)
 	/* This pattern works on FICS but not ICC */
 	player = StripHighlightAndTitle(star_match[0]);
 	if (strcmp(zippyPartner, player) != 0) {
-	  safeStrCpy(zippyPartner, player, sizeof(zippyPartner)/sizeof(zippyPartner[0]));
-	  snprintf(reply, MSG_SIZ, "partner %s\n", player);
-	  SendToProgram(reply, &first);
+	    strcpy(zippyPartner, player);
+	    sprintf(reply, "partner %s\n", player);
+	    SendToProgram(reply, &first);
 	}
-	snprintf(reply, MSG_SIZ, "ptell %s\n", star_match[1]);
+	sprintf(reply, "ptell %s\n", star_match[1]);
 	SendToProgram(reply, &first);
 	return TRUE;
     }
 
     if (looking_at(buf, i, "* tells you: *") ||
-	looking_at(buf, i, "* says: *"))
-    {
+	looking_at(buf, i, "* says: *")) {
 	player = StripHighlightAndTitle(star_match[0]);
 	if (appData.zippyPassword[0] != NULLCHAR &&
 	    strncmp(star_match[1], appData.zippyPassword,
@@ -538,7 +512,7 @@ ZippyControl (char *buf, int *i)
 		    strlen(appData.zippyWrongPassword)) == 0) {
 	    p = star_match[1] + strlen(appData.zippyWrongPassword);
 	    while (*p == ' ') p++;
-	    snprintf(reply, MSG_SIZ, "wrong %s\n", player);
+	    sprintf(reply, "wrong %s\n", player);
 	    SendToICS(reply);
 	} else if (appData.zippyBughouse && first.initDone &&
 		   strcmp(player, zippyPartner) == 0) {
@@ -547,12 +521,12 @@ ZippyControl (char *buf, int *i)
 	    SendToProgram("\n", &first);
 	} else if (strncmp(star_match[1], HI, 6) == 0) {
 	    extern char* programVersion;
-	    snprintf(reply, MSG_SIZ, "%stell %s %s\n",
+	    sprintf(reply, "%stell %s %s\n",
 		    ics_prefix, player, programVersion);
 	    SendToICS(reply);
 	} else if (strncmp(star_match[1], "W0W!! ", 6) == 0) {
 	    extern char* programVersion;
-	    snprintf(reply, MSG_SIZ, "%stell %s %s\n", ics_prefix,
+	    sprintf(reply, "%stell %s %s\n", ics_prefix,
 		    player, programVersion);
 	    SendToICS(reply);
 	} else if (appData.zippyTalk && (((unsigned) random() % 10) < 9)) {
@@ -560,28 +534,20 @@ ZippyControl (char *buf, int *i)
 		Speak("tell", player);
 	    }
 	}
-
-        ColorizeEx( ColorTell, FALSE );
-
 	return TRUE;
-    }
-
-    if( appData.colorize && looking_at(buf, i, "* (*) seeking") ) {
-	ColorizeEx(ColorSeek, FALSE);
-        return FALSE;
     }
 
     if (looking_at(buf, i, "* spoofs you:")) {
         player = StripHighlightAndTitle(star_match[0]);
-        snprintf(reply, MSG_SIZ, "spoofedby %s\n", player);
+        sprintf(reply, "spoofedby %s\n", player);
         SendToICS(reply);
     }
-
     return FALSE;
 }
 
-int
-ZippyConverse(char *buf, int *i)
+int ZippyConverse(buf, i)
+     char *buf;
+     int *i;
 {
     static char lastgreet[MSG_SIZ];
     char reply[MSG_SIZ];
@@ -589,23 +555,19 @@ ZippyConverse(char *buf, int *i)
 
     /* Shouts and emotes */
     if (looking_at(buf, i, "--> * *") ||
-	looking_at(buf, i, "* shouts: *"))
-    {
+	looking_at(buf, i, "* shouts: *")) {
       if (appData.zippyTalk) {
 	char *player = StripHighlightAndTitle(star_match[0]);
 	if (strcmp(player, ics_handle) == 0) {
 	    return TRUE;
 	} else if (appData.zippyPinhead[0] != NULLCHAR &&
 		   StrCaseStr(star_match[1], appData.zippyPinhead) != NULL) {
-	  snprintf(reply, MSG_SIZ, "insult %s\n", player);
+	    sprintf(reply, "insult %s\n", player);
 	    SendToICS(reply);
 	} else if (ZippyCalled(star_match[1])) {
 	    Speak("shout", NULL);
 	}
       }
-
-      ColorizeEx(ColorShout, FALSE);
-
       return TRUE;
     }
 
@@ -616,9 +578,6 @@ ZippyConverse(char *buf, int *i)
 	    Speak("kibitz", NULL);
 	}
       }
-
-      ColorizeEx(ColorKibitz, FALSE);
-
       return TRUE;
     }
 
@@ -629,9 +588,6 @@ ZippyConverse(char *buf, int *i)
 	    Speak("whisper", NULL);
 	}
       }
-
-      ColorizeEx(ColorKibitz, FALSE);
-
       return TRUE;
     }
 
@@ -657,6 +613,7 @@ ZippyConverse(char *buf, int *i)
     /* Channel tells */
     oldi = *i;
     if (looking_at(buf, i, "*(*: *")) {
+	char *player;
 	char *channel;
 	if (star_match[0][0] == NULLCHAR  ||
 	    strchr(star_match[0], ' ') ||
@@ -666,6 +623,7 @@ ZippyConverse(char *buf, int *i)
 	    return FALSE;
 	}
 	if (appData.zippyTalk) {
+	  player = StripHighlightAndTitle(star_match[0]);
 	  channel = strrchr(star_match[1], '(');
 	  if (channel == NULL) {
 	    channel = star_match[1];
@@ -673,13 +631,18 @@ ZippyConverse(char *buf, int *i)
 	    channel++;
 	  }
 	  channel[strlen(channel)-1] = NULLCHAR;
-
+#if 0
+	  /* Always tell to the channel (probability 90%) */
+	  if (strcmp(player, ics_handle) != 0 &&
+	      ((unsigned) random() % 10) < 9) {
+	    Speak("tell", channel);
+	  }
+#else
 	  /* Tell to the channel only if someone mentions our name */
 	  if (ZippyCalled(star_match[2])) {
 	    Speak("tell", channel);
 	  }
-
-          ColorizeEx( atoi(channel) == 1 ? ColorChannel1 : ColorChannel, FALSE );
+#endif
 	}
 	return TRUE;
     }
@@ -690,7 +653,7 @@ ZippyConverse(char *buf, int *i)
 	 atoi(star_match[0]) != 0) ||
 	looking_at(buf, i, "* has left a message for you") ||
 	looking_at(buf, i, "* just sent you a message")) {
-      snprintf(reply, MSG_SIZ, "%smessages\n%sclearmessages *\n",
+        sprintf(reply, "%smessages\n%sclearmessages *\n",
 		ics_prefix, ics_prefix);
 	SendToICS(reply);
 	return TRUE;
@@ -699,28 +662,28 @@ ZippyConverse(char *buf, int *i)
     if (looking_at(buf, i, "Notification: * has arrived")) {
 	if (((unsigned) random() % 3) == 0) {
 	    char *player = StripHighlightAndTitle(star_match[0]);
-	    safeStrCpy(lastgreet, player, sizeof(lastgreet)/sizeof(lastgreet[0]));
-	    snprintf(reply, MSG_SIZ, "greet %s\n", player);
+	    strcpy(lastgreet, player);
+	    sprintf(reply, "greet %s\n", player);
 	    SendToICS(reply);
 	    Speak("tell", player);
 	}
-    }
+    }	
 
     if (looking_at(buf, i, "Notification: * has departed")) {
 	if (((unsigned) random() % 3) == 0) {
 	    char *player = StripHighlightAndTitle(star_match[0]);
-	    snprintf(reply, MSG_SIZ, "farewell %s\n", player);
+	    sprintf(reply, "farewell %s\n", player);
 	    SendToICS(reply);
 	}
-    }
+    }	
 
     if (looking_at(buf, i, "Not sent -- * is censoring you")) {
 	char *player = StripHighlightAndTitle(star_match[0]);
 	if (strcmp(player, lastgreet) == 0) {
-	  snprintf(reply, MSG_SIZ, "%s-notify %s\n", ics_prefix, player);
+	    sprintf(reply, "%s-notify %s\n", ics_prefix, player);
 	    SendToICS(reply);
 	}
-    }
+    }	
 
     if (looking_at(buf, i, "command is currently turned off")) {
 	appData.zippyUseI = 0;
@@ -729,8 +692,8 @@ ZippyConverse(char *buf, int *i)
     return FALSE;
 }
 
-void
-ZippyGameStart (char *white, char* black)
+void ZippyGameStart(white, black)
+     char *white, *black;
 {
     if (!first.initDone) {
       /* Game is starting prematurely.  We can't deal with this */
@@ -747,8 +710,9 @@ ZippyGameStart (char *white, char* black)
     }
 }
 
-void
-ZippyGameEnd (ChessMove result, char *resultDetails)
+void ZippyGameEnd(result, resultDetails)
+     ChessMove result;
+     char *resultDetails;
 {
     if (appData.zippyAcceptOnly[0] == NULLCHAR &&
 	appData.zippyGameEnd[0] != NULLCHAR) {
@@ -756,48 +720,42 @@ ZippyGameEnd (ChessMove result, char *resultDetails)
       SendToICS("\n");
     }
     zippyLastGameEnd = time(0);
-    if(forwardMostMove < appData.zippyShortGame)
-      safeStrCpy(zippyOffender, zippyLastOpp, sizeof(zippyOffender)/sizeof(zippyOffender[0]));
-    else
-      zippyOffender[0] = 0; // [HGM] aborter
 }
 
 /*
  * Routines to implement Zippy playing chess
  */
 
-void
-ZippyHandleChallenge (char *srated, char *swild, char *sbase, char *sincrement, char *opponent)
+void ZippyHandleChallenge(srated, swild, sbase, sincrement, opponent)
+     char *srated, *swild, *sbase, *sincrement, *opponent;
 {
     char buf[MSG_SIZ];
-    int i=0;
+    int base, increment;
+    char rated;
     VariantClass variant;
     char *varname;
 
+    rated = srated[0];
     variant = StringToVariant(swild);
     varname = VariantName(variant);
-
-    /* [DM] If icsAnalyzeEngine active we don't accept automatic games */
-    if (appData.icsActive && appData.icsEngineAnalyze) return;
+    base = atoi(sbase);
+    increment = atoi(sincrement);
 
     /* If desired, you can insert more code here to decline matches
        based on rated, variant, base, and increment, but it is
        easier to use the ICS formula feature instead. */
 
     if (variant == VariantLoadable) {
-      snprintf(buf, MSG_SIZ,
+        sprintf(buf,
 	 "%stell %s This computer can't play wild type %s\n%sdecline %s\n",
 		ics_prefix, opponent, swild, ics_prefix, opponent);
 	SendToICS(buf);
 	return;
     }
-    if (StrStr(appData.zippyVariants, varname) == NULL ||
-              ((i=first.protocolVersion) != 1 && StrStr(first.variants, varname) == NULL) /* [HGM] zippyvar */
-                                                          ) {
-      snprintf(buf, MSG_SIZ,
+    if (StrStr(appData.zippyVariants, varname) == NULL) {
+        sprintf(buf,
 	 "%stell %s This computer can't play %s [%s], only %s\n%sdecline %s\n",
-		ics_prefix, opponent, swild, varname,
-                i ? first.variants : appData.zippyVariants,                               /* [HGM] zippyvar */
+		ics_prefix, opponent, swild, varname, appData.zippyVariants,
 		ics_prefix, opponent);
 	SendToICS(buf);
 	return;
@@ -809,26 +767,15 @@ ZippyHandleChallenge (char *srated, char *swild, char *sbase, char *sincrement, 
         /* Yes, and this isn't him.  Ignore challenge. */
 	return;
     }
-
+    
     /* Too many consecutive games with same opponent?  If so, make him
        wait until someone else has played or a timeout has elapsed. */
     if (appData.zippyMaxGames &&
 	strcmp(opponent, zippyLastOpp) == 0 &&
 	zippyConsecGames >= appData.zippyMaxGames &&
 	difftime(time(0), zippyLastGameEnd) < appData.zippyReplayTimeout) {
-      snprintf(buf, MSG_SIZ,  "%stell %s Sorry, you have just played %d consecutive games against %s.  To give others a chance, please wait %d seconds or until someone else has played.\n%sdecline %s\n",
+      sprintf(buf, "%stell %s Sorry, you have just played %d consecutive games against %s.  To give others a chance, please wait %d seconds or until someone else has played.\n%sdecline %s\n",
 	      ics_prefix, opponent, zippyConsecGames, ics_handle,
-	      appData.zippyReplayTimeout, ics_prefix, opponent);
-      SendToICS(buf);
-      return;
-    }
-
-    /* [HGM] aborter: opponent is cheater that aborts games he doesn't like on first move. Make him wait */
-    if (strcmp(opponent, zippyOffender) == 0 &&
-	difftime(time(0), zippyLastGameEnd) < appData.zippyReplayTimeout) {
-      snprintf(buf, MSG_SIZ,  "%stell %s Sorry, your previous game against %s was rather short. "
-		   " It will wait %d seconds to see if a tougher opponent comes along.\n%sdecline %s\n",
-	      ics_prefix, opponent, ics_handle,
 	      appData.zippyReplayTimeout, ics_prefix, opponent);
       SendToICS(buf);
       return;
@@ -836,13 +783,13 @@ ZippyHandleChallenge (char *srated, char *swild, char *sbase, char *sincrement, 
 
     /* Engine not yet initialized or still thinking about last game? */
     if (!first.initDone || first.lastPing != first.lastPong) {
-      snprintf(buf, MSG_SIZ,  "%stell %s I'm not quite ready for a new game yet; try again soon.\n%sdecline %s\n",
+      sprintf(buf, "%stell %s I'm not quite ready for a new game yet; try again soon.\n%sdecline %s\n",
 	      ics_prefix, opponent, ics_prefix, opponent);
       SendToICS(buf);
       return;
     }
 
-    snprintf(buf, MSG_SIZ, "%saccept %s\n", ics_prefix, opponent);
+    sprintf(buf, "%saccept %s\n", ics_prefix, opponent);
     SendToICS(buf);
     if (appData.zippyTalk) {
       Speak("tell", opponent);
@@ -851,8 +798,9 @@ ZippyHandleChallenge (char *srated, char *swild, char *sbase, char *sincrement, 
 
 
 /* Accept matches */
-int
-ZippyMatch (char *buf, int *i)
+int ZippyMatch(buf, i)
+     char *buf;
+     int *i;
 {
     if (looking_at(buf, i, "* * match * * requested with * (*)")) {
 
@@ -884,10 +832,7 @@ ZippyMatch (char *buf, int *i)
     if (looking_at(buf, i, "Challenge: * (*) *(*) * * * * Loaded from *")) {
 	/* note: star_match[2] can include "[white] " or "[black] "
 	   before our own name. */
-	if(star_match[8] == NULL || star_match[8][0] == 0) // [HGM] chessd: open-source ICS has file on next line
-	     ZippyHandleChallenge(star_match[4], star_match[5],
-			     star_match[6], star_match[7],			     StripHighlightAndTitle(star_match[0]));
-	else ZippyHandleChallenge(star_match[4], star_match[8],
+	ZippyHandleChallenge(star_match[4], star_match[8],
 			     star_match[6], star_match[7],
 			     StripHighlightAndTitle(star_match[0]));
 	return TRUE;
@@ -923,14 +868,12 @@ ZippyMatch (char *buf, int *i)
 	return TRUE;
     }
 
-
-        if (looking_at(buf, i, "Your opponent offers you a draw") ||
-            looking_at(buf, i, "* offers you a draw")) {
-            if (first.sendDrawOffers && first.initDone) {
-                SendToProgram("draw\n", &first);
-            }
-            return TRUE;
-        }
+    if (looking_at(buf, i, "offers you a draw")) {
+        if (first.sendDrawOffers && first.initDone) {
+	    SendToProgram("draw\n", &first);
+	}
+	return TRUE;
+    }
 
     if (looking_at(buf, i, "requests that the game be aborted") ||
         looking_at(buf, i, "would like to abort")) {
@@ -967,17 +910,16 @@ ZippyMatch (char *buf, int *i)
     return FALSE;
 }
 
-/* Initialize chess program with data from the first board
+/* Initialize chess program with data from the first board 
  * of a new or resumed game.
  */
-void
-ZippyFirstBoard (int moveNum, int basetime, int increment)
+void ZippyFirstBoard(moveNum, basetime, increment)
+     int moveNum, basetime, increment;
 {
     char buf[MSG_SIZ];
     int w, b;
     char *opp = (gameMode==IcsPlayingWhite ? gameInfo.black : gameInfo.white);
     Boolean sentPos = FALSE;
-    char *bookHit = NULL; // [HGM] book
 
     if (!first.initDone) {
       /* Game is starting prematurely.  We can't deal with this */
@@ -990,7 +932,7 @@ ZippyFirstBoard (int moveNum, int basetime, int increment)
 
     /* Send the variant command if needed */
     if (gameInfo.variant != VariantNormal) {
-      snprintf(buf, MSG_SIZ,  "variant %s\n", VariantName(gameInfo.variant));
+      sprintf(buf, "variant %s\n", VariantName(gameInfo.variant));
       SendToProgram(buf, &first);
     }
 
@@ -1001,7 +943,7 @@ ZippyFirstBoard (int moveNum, int basetime, int increment)
       sentPos = TRUE;
     }
 
-    snprintf(buf, MSG_SIZ,  "level 0 %d %d\n", basetime, increment);
+    sprintf(buf, "level 0 %d %d\n", basetime, increment);
     SendToProgram(buf, &first);
 
     /* Count consecutive games from one opponent */
@@ -1009,7 +951,7 @@ ZippyFirstBoard (int moveNum, int basetime, int increment)
       zippyConsecGames++;
     } else {
       zippyConsecGames = 1;
-      safeStrCpy(zippyLastOpp, opp, sizeof(zippyLastOpp)/sizeof(zippyLastOpp[0]));
+      strcpy(zippyLastOpp, opp);
     }
 
     /* Send the "computer" command if the opponent is in the list
@@ -1025,15 +967,15 @@ ZippyFirstBoard (int moveNum, int basetime, int increment)
        message from ICS." Send 0 in that case */
     w = (gameInfo.whiteRating >= 0) ? gameInfo.whiteRating : 0;
     b = (gameInfo.blackRating >= 0) ? gameInfo.blackRating : 0;
-
+    
     firstMove = FALSE;
     if (gameMode == IcsPlayingWhite) {
         if (first.sendName) {
-	  snprintf(buf, MSG_SIZ,  "name %s\n", gameInfo.black);
+	  sprintf(buf, "name %s\n", gameInfo.black);
 	  SendToProgram(buf, &first);
 	}
-	safeStrCpy(ics_handle, gameInfo.white, MSG_SIZ);
-	snprintf(buf, MSG_SIZ,  "rating %d %d\n", w, b);
+	strcpy(ics_handle, gameInfo.white);
+	sprintf(buf, "rating %d %d\n", w, b);
 	SendToProgram(buf, &first);
 	if (sentPos) {
 	    /* Position sent above, engine is in force mode */
@@ -1048,7 +990,7 @@ ZippyFirstBoard (int moveNum, int basetime, int increment)
 		  SendTimeRemaining(&first, TRUE);
 		}
 	      }
-	      bookHit = SendMoveToBookUser(forwardMostMove-1, &first, TRUE); // [HGM] book: send go or retrieve book move
+	      SendToProgram("go\n", &first);
 	    } else {
 	        /* Engine's opponent is on move now */
 	        if (first.usePlayother) {
@@ -1074,17 +1016,16 @@ ZippyFirstBoard (int moveNum, int basetime, int increment)
 		  SendTimeRemaining(&first, TRUE);
 		}
 	      }
-//	      SendToProgram("go\n", &first);
-	      bookHit = SendMoveToBookUser(forwardMostMove-1, &first, TRUE); // [HGM] book: send go or retrieve book move
+	      SendToProgram("go\n", &first);
 	    }
 	}
     } else if (gameMode == IcsPlayingBlack) {
         if (first.sendName) {
-	  snprintf(buf, MSG_SIZ,  "name %s\n", gameInfo.white);
+	  sprintf(buf, "name %s\n", gameInfo.white);
 	  SendToProgram(buf, &first);
 	}
-	safeStrCpy(ics_handle, gameInfo.black, MSG_SIZ);
-	snprintf(buf, MSG_SIZ,  "rating %d %d\n", b, w);
+	strcpy(ics_handle, gameInfo.black);
+	sprintf(buf, "rating %d %d\n", b, w);
 	SendToProgram(buf, &first);
 	if (sentPos) {
 	    /* Position sent above, engine is in force mode */
@@ -1099,8 +1040,7 @@ ZippyFirstBoard (int moveNum, int basetime, int increment)
 		  SendTimeRemaining(&first, FALSE);
 		}
 	      }
-//	      SendToProgram("go\n", &first);
-	      bookHit = SendMoveToBookUser(forwardMostMove-1, &first, TRUE); // [HGM] book: send go or retrieve book move
+	      SendToProgram("go\n", &first);
 	    } else {
 	        /* Engine's opponent is on move now */
 	        if (first.usePlayother) {
@@ -1116,29 +1056,18 @@ ZippyFirstBoard (int moveNum, int basetime, int increment)
 	} else {
 	    /* Position not sent above, move list might be sent later */
 	    /* Nothing needs to be done here */
-	}
-    }
-
-    if(bookHit) { // [HGM] book: simulate book reply
-	static char bookMove[MSG_SIZ]; // a bit generous?
-
-	programStats.depth = programStats.nodes = programStats.time =
-	programStats.score = programStats.got_only_move = 0;
-	sprintf(programStats.movelist, "%s (xbook)", bookHit);
-
-	safeStrCpy(bookMove, "move ", sizeof(bookMove)/sizeof(bookMove[0]));
-	strcat(bookMove, bookHit);
-	HandleMachineMove(bookMove, &first);
+	}	
     }
 }
 
 
 void
-ZippyHoldings (char *white_holding, char *black_holding, char *new_piece)
+ZippyHoldings(white_holding, black_holding, new_piece)
+     char *white_holding, *black_holding, *new_piece;
 {
     char buf[MSG_SIZ];
     if (gameMode != IcsPlayingBlack && gameMode != IcsPlayingWhite) return;
-    snprintf(buf, MSG_SIZ,  "holding [%s] [%s] %s\n",
+    sprintf(buf, "holding [%s] [%s] %s\n",
 	    white_holding, black_holding, new_piece);
     SendToProgram(buf, &first);
 }

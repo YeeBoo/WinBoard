@@ -1,22 +1,25 @@
 #! @PERLPATH@
 ## (configure will change the top line to the location of perl on your system)
 #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
-## cmail: a tool to aid playing chess by email
-## Copyright (C) 1993,2009, 2010, 2011, 2012, 2013  Free Software Foundation, Inc.
-## 
-##  cmail is free software: you can redistribute it and/or modify
-##  it under the terms of the GNU General Public License as published by
-##  the Free Software Foundation, either version 3 of the License, or (at
-##  your option) any later version.
-## 
-##  cmail is distributed in the hope that it will be useful, but
-##  WITHOUT ANY WARRANTY; without even the implied warranty of
-##  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-##  General Public License for more details.
-## 
-##  You should have received a copy of the GNU General Public License
-##  along with this program. If not, see http://www.gnu.org/licenses/.  *
+## cmail $Revision: 2.1 $: a tool to aid playing chess by email
+## Copyright (C) 1993  Free Software Foundation, Inc.
 ##
+## cmail is free software; you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation; either version 2 of the License, or
+## (at your option) any later version.
+##
+## cmail is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with cmail; if not, write to the Free Software
+## Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111 USA.
+##
+## Modified:  $Date: 2003/10/27 19:21:00 $
+## Revision:  $Revision: 2.1 $
 ## Email:     evan@quadstone.co.uk
 ## Snailmail: Evan Welsh
 ##            Quadstone Ltd
@@ -494,14 +497,14 @@ sub play_game {
 	    if (@ARCHIVE) {
 		local ($date) = &get_date_from_games (@ARCHIVE) ;
 		$XBOARD_ARGS = join (' ', (("-lgf",
-					    "'$ARCDIR/$PGN_GAME.$date.archive'"),
-					   @NCP_FLAGS,
+					    "$ARCDIR/$PGN_GAME.$date.archive"),
+					   "-ncp",
 					   "-xics",
 					   @TD_FLAGS,
 					   @DEBUG_FLAGS,
 					   @UNREC_ARGS)) ;
 	    } else {
-		$XBOARD_ARGS = join (' ', (("-cmail", "'$PGN_GAME'"),
+		$XBOARD_ARGS = join (' ', (("-cmail", $PGN_GAME),
 					   @TD_FLAGS,
 					   @NCP_FLAGS,
 					   "-xics",
@@ -510,8 +513,8 @@ sub play_game {
 	    }
 	} else {
 	    $PGN_GAME = "unknown.cmail" ;
-	    $XBOARD_ARGS = join (' ', (("-lgf", "'$PGN_GAME'"),
-				       @NCP_FLAGS,
+	    $XBOARD_ARGS = join (' ', (("-lgf", $PGN_GAME),
+				       "-ncp",
 				       "-xics",
 				       @TD_FLAGS,
 				       @DEBUG_FLAGS,
@@ -524,15 +527,15 @@ sub play_game {
 	$PID_FILE = "$PGN_GAME.pid" ;
 	if (   (! $REUSE)
 	    || (! (   (-f $PID_FILE)
-		   && ($XBOARD_PID = `cat '$PID_FILE'`)
+		   && ($XBOARD_PID = `cat $PID_FILE`)
 		   && ("$XBOARD_PID" =~ /^\d+$/)
 		   && (kill "SIGUSR1", $XBOARD_PID)))) {
 	    print "Loading xboard for game \"$PGN_GAME\"..." ;
 #  	    system ("gdb xboard") ;
 	    system (  "{ ({ xboard $XBOARD_ARGS & } ;"
-		    . "   echo \$! > '$PID_FILE' ;"
+		    . "   echo \$! > $PID_FILE ;"
 		    . "   wait ;"
-		    . "   rm '$PID_FILE') & } >'$LOG_FILE' 2>&1") ;
+		    . "   rm $PID_FILE) & } >$LOG_FILE 2>&1") ;
 	    print (  "done.\n"
 		   . "If nothing happens look for an error message in\n"
 		   . "$CMAILDIR/$LOG_FILE\n") ;
@@ -1606,7 +1609,7 @@ sub main {
 &main () ;
 #=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=#
 __END__
-cmail (From XBoard version @PACKAGE_VERSION@), Copyright (C) 1993 Free Software Foundation, Inc.
+cmail $Revision: 2.1 $, Copyright (C) 1993 Free Software Foundation, Inc.
 cmail comes with ABSOLUTELY NO WARRANTY; for details type `cmail -w'.
 cmail is free software, and you are welcome to redistribute it
 under certain conditions; type `cmail -c' for details.

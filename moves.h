@@ -1,13 +1,9 @@
 /*
  * moves.h - Move generation and checking
+ * $Id: moves.h,v 2.1 2003/10/27 19:21:00 mann Exp $
  *
- * Copyright 1991 by Digital Equipment Corporation, Maynard,
- * Massachusetts.
- *
- * Enhancements Copyright 1992-2001, 2002, 2003, 2004, 2005, 2006,
- * 2007, 2008, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
- *
- * Enhancements Copyright 2005 Alessandro Scotti
+ * Copyright 1991 by Digital Equipment Corporation, Maynard, Massachusetts.
+ * Enhancements Copyright 1992-95 Free Software Foundation, Inc.
  *
  * The following terms apply to Digital Equipment Corporation's copyright
  * interest in XBoard:
@@ -31,36 +27,34 @@
  * SOFTWARE.
  * ------------------------------------------------------------------------
  *
- * The following terms apply to the enhanced version of XBoard
- * distributed by the Free Software Foundation:
+ * The following terms apply to the enhanced version of XBoard distributed
+ * by the Free Software Foundation:
  * ------------------------------------------------------------------------
- *
- * GNU XBoard is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or (at
- * your option) any later version.
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * GNU XBoard is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses/.  *
- *
- *------------------------------------------------------------------------
- ** See the file ChangeLog for a revision history.  */
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ * ------------------------------------------------------------------------
+ */
+#ifndef _USE_DEFINE_566D3246_8872_4a17_9254_66361F89A058_PLEASE_
+#define _USE_DEFINE_566D3246_8872_4a17_9254_66361F89A058_PLEASE_
 
 extern ChessSquare PromoPiece P((ChessMove moveType));
 extern ChessMove PromoCharToMoveType P((int whiteOnMove, int promoChar));
 extern char PieceToChar P((ChessSquare p));
 extern ChessSquare CharToPiece P((int c));
-extern int PieceToNumber P((ChessSquare p));
 
 extern void CopyBoard P((Board to, Board from));
 extern int CompareBoards P((Board board1, Board board2));
-extern char pieceToChar[(int)EmptySquare+1];
-extern char pieceNickName[(int)EmptySquare];
 
 typedef void (*MoveCallback) P((Board board, int flags, ChessMove kind,
 				int rf, int ff, int rt, int ft,
@@ -77,24 +71,12 @@ typedef void (*MoveCallback) P((Board board, int flags, ChessMove kind,
 #define F_IGNORE_CHECK 32
 #define F_KRIEGSPIEL_CAPTURE 64 /* pawns can try to capture invisible pieces */
 #define F_ATOMIC_CAPTURE 128    /* capturing piece explodes, destroying itself
-				   and all non-pawns on adjacent squares;
+				   and all non-pawns on adjacent squares; 
 				   destroying your own king is illegal */
-#define F_FRC_TYPE_CASTLING 256 /* generate castlings as captures of own Rook */
-#define F_MANDATORY_CAPTURE 0x200
 
-/* Special epfile values. [HGM] positive values are non-reversible moves! */
-#define EP_NONE (-4)           /* [HGM] Tricky! order matters:            */
-#define EP_UNKNOWN (-1)        /*       >= EP_UNKNOWN spils rep-draw      */
-#define EP_CAPTURE (-2)        /*       <= EP_NONE is reversible move     */
-#define EP_PAWN_MOVE (-3)
-#define EP_REP_DRAW   (-15)
-#define EP_RULE_DRAW  (-14)
-#define EP_INSUF_DRAW  (-13)
-#define EP_DRAWS (-10)
-#define EP_WINS (-9)
-#define EP_BEROLIN_A 16        /* [HGM] berolina: add to file if pawn to be taken of a-side of e.p.file */
-#define EP_CHECKMATE 100       /* [HGM] verify: record mates in epStatus for easy claim verification    */
-#define EP_STALEMATE -16
+/* Special epfile values */
+#define EP_NONE -1
+#define EP_UNKNOWN -2
 
 /* Call callback once for each pseudo-legal move in the given
    position, except castling moves.  A move is pseudo-legal if it is
@@ -104,17 +86,17 @@ typedef void (*MoveCallback) P((Board board, int flags, ChessMove kind,
    EP_UNKNOWN if we don't know and want to allow all e.p. captures.
    Promotion moves generated are to Queen only.
 */
-extern void GenPseudoLegal P((Board board, int flags,
-			      MoveCallback callback, VOIDSTAR closure, ChessSquare filter));
+extern void GenPseudoLegal P((Board board, int flags, int epfile,
+			      MoveCallback callback, VOIDSTAR closure));
 
-/* Like GenPseudoLegal, but include castling moves and (unless
+/* Like GenPseudoLegal, but include castling moves and (unless 
    F_IGNORE_CHECK is set in the flags) omit moves that would leave the
    king in check.  The CASTLE_OK flags are true if castling is not yet
    ruled out by a move of the king or rook.  Return TRUE if the player
    on move is currently in check and F_IGNORE_CHECK is not set.
 */
-extern int GenLegal P((Board board, int flags,
-			MoveCallback callback, VOIDSTAR closure, ChessSquare filter));
+extern int GenLegal P((Board board, int flags, int epfile,
+			MoveCallback callback, VOIDSTAR closure));
 
 /* If the player on move were to move from (rf, ff) to (rt, ft), would
    he leave himself in check?  Or if rf == -1, is the player on move
@@ -122,14 +104,14 @@ extern int GenLegal P((Board board, int flags,
    e.p. capture.  The possibility of castling out of a check along the
    back rank is not accounted for (i.e., we still return nonzero), as
    this is illegal anyway.  Return value is the number of times the
-   king is in check. */
+   king is in check. */ 
 extern int CheckTest P((Board board, int flags,
 			int rf, int ff, int rt, int ft, int enPassant));
 
 /* Is a move from (rf, ff) to (rt, ft) legal for the player whom the
    flags say is on move?  Other arguments as in GenPseudoLegal.
    Returns the type of move made, taking promoChar into account. */
-extern ChessMove LegalityTest P((Board board, int flags,
+extern ChessMove LegalityTest P((Board board, int flags, int epfile,
 				 int rf, int ff, int rt, int ft,
 				 int promoChar));
 
@@ -137,15 +119,9 @@ extern ChessMove LegalityTest P((Board board, int flags,
 #define MT_CHECK 1
 #define MT_CHECKMATE 2
 #define MT_STALEMATE 3
-#define MT_STAINMATE 4 /* [HGM] xq: for games where being stalemated counts as a loss    */
-#define MT_STEALMATE 5 /* [HGM] losers: for games where being stalemated counts as a win */
-#define MT_TRICKMATE 6 /* [HGM] losers: for games where being checkmated counts as a win */
-#define MT_BARE      7 /* [HGM] shatranj: for games where having bare king loses         */
-#define MT_DRAW      8 /* [HGM] shatranj: other draws                                    */
-#define MT_NOKING    9 /* [HGM] atomic: for games lost through king capture              */
 
 /* Return MT_NONE, MT_CHECK, MT_CHECKMATE, or MT_STALEMATE */
-extern int MateTest P((Board board, int flags));
+extern int MateTest P((Board board, int flags, int epfile));
 
 typedef struct {
     /* Input data */
@@ -158,18 +134,18 @@ typedef struct {
     int rf, ff, rt, ft;
     int promoChar; /* 'q' if a promotion and promoCharIn was NULLCHAR */
     int count;     /* Number of possibilities found */
-    int captures;  /* [HGM] oneclick: number of matching captures */
 } DisambiguateClosure;
 
 /* Disambiguate a partially-known move */
-void Disambiguate P((Board board, int flags, DisambiguateClosure *closure));
+void Disambiguate P((Board board, int flags, int epfile,
+		     DisambiguateClosure *closure));
 
 
 /* Convert coordinates to normal algebraic notation.
    promoChar must be NULLCHAR or '.' if not a promotion.
 */
-ChessMove CoordsToAlgebraic P((Board board, int flags,
+ChessMove CoordsToAlgebraic P((Board board, int flags, int epfile,
 			       int rf, int ff, int rt, int ft,
 			       int promoChar, char out[MOVE_LEN]));
-
-extern int quickFlag;
+			       
+#endif //_USE_DEFINE_566D3246_8872_4a17_9254_66361F89A058_PLEASE_

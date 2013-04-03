@@ -1,6 +1,5 @@
 /* config.h.in.  Generated automatically from configure.in by autoheader.  */
 
-
 /* Define if you have <sys/wait.h> that is POSIX.1 compatible.  */
 /*#undef HAVE_SYS_WAIT_H*/
 
@@ -28,7 +27,9 @@
 #define HAVE_GETTIMEOFDAY 0
 
 /* Use our own random() defined in winboard.c. */
-#define HAVE_RANDOM 0
+#define HAVE_RANDOM 1
+#define random myrandom
+#define srandom mysrandom
 
 #define HAVE_SYS_SOCKET_H 0
 
@@ -36,26 +37,9 @@
 
 #define LAST_PTY_LETTER 'q'
 
-/* Name of package */
-#define PACKAGE "WinBoard"
+#define PATCHLEVEL "7"
 
-/* Define to the address where bug reports for this package should be sent. */
-#define PACKAGE_BUGREPORT "bug-xboard@gnu.org"
-
-/* Define to the full name of this package. */
-#define PACKAGE_NAME "WinBoard"
-
-/* Define to the full name and version of this package. */
-#define PACKAGE_STRING "WinBoard master-20130224"
-
-/* Define to the one symbol short name of this package. */
-#define PACKAGE_TARNAME "winboard"
-
-/* Define to the version of this package. */
-#define PACKAGE_VERSION "master-20130224"
-
-/* Define the Windows-specific FILE version info.  this *MUST* be four comma separated 16-bit integers */
-#define PACKAGE_FILEVERSION 4,7,2013,0224
+#define PRODUCT "WinBoard"
 
 #define PTY_ITERATION
 
@@ -71,6 +55,8 @@
 
 #define USE_PTYS 0
 
+#define VERSION "4.2"
+
 /*#undef X_WCHAR*/
 
 #ifndef __BORLANDC__
@@ -85,7 +71,7 @@
 /*#undef HAVE__GETPTY*/
 
 /* Define if you have the ftime function.  */
-#define HAVE_FTIME 1
+/*#define HAVE_FTIME 1*/
 
 /* Define if you have the grantpt function.  */
 /*#undef HAVE_GRANTPT*/
@@ -141,20 +127,7 @@
 #define _strdup(x) strdup(x)
 #define STRICT
 #define _winmajor 3  /* windows 95 */
+#define SCF_DEFAULT 0x0000
+#define SCF_ALL 0x0004
 #endif
 
-/* Some definitions required by MSVC 4.1 */ 
-#ifndef WM_MOUSEWHEEL 
-#define WM_MOUSEWHEEL 0x020A 
-#endif 
-#ifndef SCF_DEFAULT 
-#define SCF_DEFAULT 0x0000 
-#define SCF_ALL 0x0004 
-#endif 
-
-#ifdef _MSC_VER
-#define snprintf _snprintf
-#if _MSC_VER < 1500
-#define vsnprintf _vsnprintf
-#endif
-#endif

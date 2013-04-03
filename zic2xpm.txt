@@ -1,0 +1,72 @@
+zic2xpm(6)                           Games                          zic2xpm(6)
+
+NNAAMMEE
+       zic2xpm  -  Tool  to  convert  ZIICS chess pieces into XBoard (XPM/XIM)
+       pieces.
+
+SSYYNNOOPPSSIISS
+       zic2xpm ffiillee11 [[ffiillee22 ......]]
+
+DDEESSCCRRIIPPTTIIOONN
+       zziicc22xxppmm converts one or more ZIICS piece files into a format  that  can
+       be  used  by XBoard.  If you give more than one filename, be aware that
+       multiple sets of the same size cannot exist in one directory.  Multiple
+       sets of different sizes can exist in a single directory.
+
+EEXXAAMMPPLLEE
+       If  you  wanted  to  make  a  directory  containing  the sets SET2.V32,
+       SET2.V40, SET2.V50, and SET2.V56, all of which are located in  ~/ziics,
+       you could do:
+
+             mkdir Sets
+             cd Sets
+             zic2xpm ~/ziics/SET2.*
+
+       You would then run XBoard like this:
+
+            xboard -pixmap Sets
+
+BBUUGGSS
+       Please report any bugs to ffrraannkkmm@@hhiiwwaaaayy..nneett
+
+SSEEEE AALLSSOO
+        xxbbooaarrdd(66).
+
+AAUUTTHHOORR
+       Frank McIngvale (frankm@hiwaay.net)
+
+CCOOPPYYIINNGG
+       Copyright (C) 1996 Free Software Foundation, Inc.
+
+       NOTICE:  The  piece images distributed with ZIICS are copyrighted works
+       of their original creators.  Images converted with zic2xpm may  not  be
+       redistributed  without the permission of the copyright holders.  Do not
+       contact the authors of zic2xpm or of ZIICS itself  to  request  permis-
+       sion.
+
+       NOTICE:    The  format  of  the  ZIICS  piece  file  was  gleaned  from
+       SHOWSETS.PAS, a part of ZIICS.  Thanks to Andy McFarland (Zek  on  ICC)
+       for  making  this source available!  ZIICS is a completely separate and
+       copyrighted work of Andy McFarland.   Use  and  distribution  of  ZIICS
+       falls under the ZIICS license, NOT the GNU General Public License.
+
+       NOTICE:  The format of the VGA imageblocks was determined by experimen-
+       tation, and without access to any of Borland Inc.'s BGI library  source
+       code.
+
+       This program is free software; you can redistribute it and/or modify it
+       under the terms of the GNU General Public License as published  by  the
+       Free  Software Foundation; either version 2 of the License, or (at your
+       option) any later version.  However, the above notices MUST BE RETAINED
+       in any copy that you redistribute or modify.
+
+       This  program  is  distributed  in the hope that it will be useful, but
+       WITHOUT  ANY  WARRANTY;  without   even   the   implied   warranty   of
+       MERCHANTABILITY  or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Gen-
+       eral Public License for more details.
+
+       You should have received a copy of the GNU General Public License along
+       with this program; if not, write to the Free Software Foundation, Inc.,
+       59 Temple Place, Suite 330, Boston, MA 02111 USA.
+
+zic2xpm 2.0                       11 Apr 1996                       zic2xpm(6)

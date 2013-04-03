@@ -1,29 +1,25 @@
 /*
- * lists.c -- Functions to implement a double linked list XBoard
+ * lists.c -- Functions to implement a double linked list
+ * XBoard $Id: lists.c,v 2.1 2003/10/27 19:21:00 mann Exp $
  *
- * Copyright 1995, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
- *
- * Enhancements Copyright 2005 Alessandro Scotti
+ * Copyright 1995 Free Software Foundation, Inc.
  *
  * ------------------------------------------------------------------------
- *
- * GNU XBoard is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or (at
- * your option) any later version.
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * GNU XBoard is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses/.  *
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111 USA.
+ * ------------------------------------------------------------------------
  *
- *------------------------------------------------------------------------
- ** See the file ChangeLog for a revision history.  */
-
-/*
  * This file could well be a part of backend.c, but I prefer it this
  * way.
  */
@@ -43,8 +39,8 @@
 /* Check, if List l is empty; returns TRUE, if it is, FALSE
  * otherwise.
  */
-int
-ListEmpty (List *l)
+int ListEmpty(l)
+    List *l;
 {
     return(l->head == (ListNode *) &l->tail);
 }
@@ -52,8 +48,8 @@ ListEmpty (List *l)
 
 /* Initialize a list. Must be executed before list is used.
  */
-void
-ListNew (List *l)
+void ListNew(l)
+    List *l;
 {
     l->head = (ListNode *) &l->tail;
     l->tail = NULL;
@@ -63,8 +59,8 @@ ListNew (List *l)
 
 /* Remove node n from the list it is inside.
  */
-void
-ListRemove (ListNode *n)
+void ListRemove(n)
+    ListNode *n;
 {
     if (n->succ != NULL) {  /*  Be safe  */
 	n->pred->succ = n->succ;
@@ -77,8 +73,8 @@ ListRemove (ListNode *n)
 
 /* Delete node n.
  */
-void
-ListNodeFree (ListNode *n)
+void ListNodeFree(n)
+    ListNode *n;
 {
     if (n) {
 	ListRemove(n);
@@ -89,8 +85,8 @@ ListNodeFree (ListNode *n)
 
 /* Create a list node with size s. Returns NULL, if out of memory.
  */
-ListNode *
-ListNodeCreate (size_t s)
+ListNode *ListNodeCreate(s)
+    size_t s;
 {
     ListNode *n;
 
@@ -104,8 +100,8 @@ ListNodeCreate (size_t s)
 
 /* Insert node n into the list of node m after m.
  */
-void
-ListInsert (ListNode *m, ListNode *n)
+void ListInsert(m, n)
+    ListNode *m, *n;
 {
     n->succ = m->succ;
     n->pred = m;
@@ -116,8 +112,9 @@ ListInsert (ListNode *m, ListNode *n)
 
 /* Add node n to the head of list l.
  */
-void
-ListAddHead (List *l, ListNode *n)
+void ListAddHead(l, n)
+    List *l;
+    ListNode *n;
 {
     ListInsert((ListNode *) &l->head, n);
 }
@@ -125,8 +122,9 @@ ListAddHead (List *l, ListNode *n)
 
 /* Add node n to the tail of list l.
  */
-void
-ListAddTail (List *l, ListNode *n)
+void ListAddTail(l, n)
+    List *l;
+    ListNode *n;
 {
     ListInsert((ListNode *) l->tailPred, n);
 }
@@ -135,8 +133,9 @@ ListAddTail (List *l, ListNode *n)
 /* Return element with number n of list l. (NULL, if n doesn't exist.)
  * Counting starts with 0.
  */
-ListNode *
-ListElem (List *l, int n)
+ListNode *ListElem(l, n)
+    List *l;
+    int n;
 {
     ListNode *ln;
 

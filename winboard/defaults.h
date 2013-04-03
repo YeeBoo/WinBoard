@@ -1,13 +1,8 @@
 /*
  * defaults.h -- Default settings for Windows NT front end to XBoard
  *
- * Copyright 1991 by Digital Equipment Corporation, Maynard,
- * Massachusetts.
- *
- * Enhancements Copyright 1992-2001, 2002, 2003, 2004, 2005, 2006,
- * 2007, 2008, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
- *
- * Enhancements Copyright 2005 Alessandro Scotti
+ * Copyright 1991 by Digital Equipment Corporation, Maynard, Massachusetts.
+ * Enhancements Copyright 1992-97 Free Software Foundation, Inc.
  *
  * The following terms apply to Digital Equipment Corporation's copyright
  * interest in XBoard:
@@ -31,30 +26,28 @@
  * SOFTWARE.
  * ------------------------------------------------------------------------
  *
- * The following terms apply to the enhanced version of XBoard
- * distributed by the Free Software Foundation:
+ * The following terms apply to the enhanced version of XBoard distributed
+ * by the Free Software Foundation:
  * ------------------------------------------------------------------------
- *
- * GNU XBoard is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or (at
- * your option) any later version.
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * GNU XBoard is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses/.  *
- *
- *------------------------------------------------------------------------
- ** See the file ChangeLog for a revision history.  */
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ * ------------------------------------------------------------------------
+ */
 
 /* Static */
 #define POSITION_FILT "Position files (*.fen,*.epd,*.pos)\0*.fen;*.epd;*.pos\0All files (*.*)\0*.*\0"
 #define GAME_FILT     "Game files (*.pgn,*.gam)\0*.pgn;*.gam\0All files (*.*)\0*.*\0"
-#define DIAGRAM_FILT  "bitmap files (*.bmp)\0*.bmp\0All files (*.*)\0*.*\0"
 #define SOUND_FILT    "Wave files (*.wav)\0*.wav\0All files (*.*)\0*.*\0"
 #define OUTER_MARGIN (tinyLayout ? 0 : 4)
 #define INNER_MARGIN (tinyLayout ? 0 : 2)
@@ -66,9 +59,9 @@
 
 /* Settable */
 #define FIRST_CHESS_PROGRAM	""
-#define FIRST_DIRECTORY		"."
+#define FIRST_DIRECTORY		""
 #define SECOND_CHESS_PROGRAM	""
-#define SECOND_DIRECTORY	"."
+#define SECOND_DIRECTORY	""
 
 #define CLOCK_FONT_TINY        "Arial:9.0 b"
 #define CLOCK_FONT_TEENY       "Arial:9.0 b"
@@ -184,9 +177,6 @@
 #define EDITTAGS_FONT_COLOSSAL "Courier New:8.0"
 #define EDITTAGS_FONT_TITANIC  "Courier New:8.0"
 
-#define MOVEHISTORY_FONT_ALL    "MS Sans Serif:8.0"
-#define GAMELIST_FONT_ALL       "MS Sans Serif:8.0"
-
 #define COLOR_SHOUT            "#209000"
 #define COLOR_SSHOUT         "b #289808"
 #define COLOR_CHANNEL1         "#2020E0"
@@ -212,7 +202,6 @@
 }
 
 #define SETTINGS_FILE         "winboard.ini"
-#define DEBUG_FILE            "winboard.debug"
 
 #define ICS_LOGON             "ics.ini"
 
@@ -222,7 +211,6 @@ freechess.org /icsport=5000 /icshelper=timeseal\n\
 global.chessparlor.com /icsport=6000 /icshelper=timeseal\n\
 chessanytime.com /icsport=5000\n\
 chess.net /icsport=5000\n\
-chess.deepnet.com /icsport=5000 /icshelper=timeseal\n\
 zics.org /icsport=5000\n\
 jogo.cex.org.br /icsport=5000\n\
 ajedrez.cec.uchile.cl /icsport=5000\n\
@@ -239,9 +227,7 @@ chess.mds.mdh.se /icsport=5000\n\
 Playe&rs,players,0,1\n\
 &Games,games,0,1\n\
 &Sought,sought,0,1\n\
-| ,none,0,0\n\
-Open Chat &Box (name),chat,1,0\n\
-&Tell (name),tell,1,0\n\
+|&Tell (name),tell,1,0\n\
 M&essage (name),message,1,0\n\
 -\n\
 &Finger (name),finger,1,1\n\
@@ -252,13 +238,11 @@ Pl&ay (name),play,1,1\n\
 "
 
 #define FCP_NAMES "\
-fmax /fd=Fairy-Max\n\
 GNUChess\n\
 \"GNUChes5 xboard\"\n\
 "
 
 #define SCP_NAMES "\
-fmax /sd=Fairy-Max\n\
 GNUChess\n\
 \"GNUChes5 xboard\"\n\
 "

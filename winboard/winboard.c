@@ -1,13 +1,9 @@
-/*
+/* 
  * WinBoard.c -- Windows NT front end to XBoard
+ * $Id: winboard.c,v 2.3 2003/11/25 05:25:20 mann Exp $
  *
- * Copyright 1991 by Digital Equipment Corporation, Maynard,
- * Massachusetts. 
- *
- * Enhancements Copyright 1992-2001, 2002, 2003, 2004, 2005, 2006,
- * 2007, 2008, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
- *
- * Enhancements Copyright 2005 Alessandro Scotti
+ * Copyright 1991 by Digital Equipment Corporation, Maynard, Massachusetts.
+ * Enhancements Copyright 1992-2001 Free Software Foundation, Inc.
  *
  * XBoard borrows its colors and the bitmaps.xchess bitmap set from XChess,
  * which was written and is copyrighted by Wayne Christopher.
@@ -34,36 +30,35 @@
  * SOFTWARE.
  * ------------------------------------------------------------------------
  *
- * The following terms apply to the enhanced version of XBoard
- * distributed by the Free Software Foundation:
+ * The following terms apply to the enhanced version of XBoard distributed
+ * by the Free Software Foundation:
  * ------------------------------------------------------------------------
- *
- * GNU XBoard is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or (at
- * your option) any later version.
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * GNU XBoard is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses/.  *
- *
- *------------------------------------------------------------------------
- ** See the file ChangeLog for a revision history.  */
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * ------------------------------------------------------------------------
+ */
 
 #include "config.h"
+
+#include <infboard.h>
 
 #include <windows.h>
 #include <winuser.h>
 #include <winsock.h>
-#include <commctrl.h>
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 #include <malloc.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -72,8 +67,8 @@
 #include <dlgs.h>
 #include <richedit.h>
 #include <mmsystem.h>
-#include <ctype.h>
-#include <io.h>
+
+#undef wReserved // See richedit.h.
 
 #if __GNUC__
 #include <errno.h>
@@ -81,36 +76,17 @@
 #endif
 
 #include "common.h"
+#include "winboard.h"
 #include "frontend.h"
 #include "backend.h"
-#include "winboard.h"
 #include "moves.h"
 #include "wclipbrd.h"
+#include "wgamelist.h"
+#include "wedittags.h"
 #include "woptions.h"
 #include "wsockerr.h"
 #include "defaults.h"
-#include "help.h"
-#include "wsnap.h"
 
-//void InitEngineUCI( const char * iniDir, ChessProgramState * cps );
-
-  int myrandom(void);
-  void mysrandom(unsigned int seed);
-
-extern int whiteFlag, blackFlag;
-Boolean flipClock = FALSE;
-extern HANDLE chatHandle[];
-extern enum ICS_TYPE ics_type;
-
-int  MySearchPath P((char *installDir, char *name, char *fullname));
-int  MyGetFullPathName P((char *name, char *fullname));
-void DisplayHoldingsCount(HDC hdc, int x, int y, int align, int copyNumber);
-VOID NewVariantPopup(HWND hwnd);
-int FinishMove P((ChessMove moveType, int fromX, int fromY, int toX, int toY,
-		   /*char*/int promoChar));
-void DisplayMove P((int moveNumber));
-Boolean ParseFEN P((Board board, int *blackPlaysFirst, char *fen));
-void ChatPopUp P((char *s));
 typedef struct {
   ChessSquare piece;  
   POINT pos;      /* window coordinates of current pos */
@@ -126,10 +102,9 @@ typedef struct {
   POINT pos;      /* window coordinates of current pos */
   POINT lastpos;  /* window coordinates of last pos - used for clipping */
   POINT from;     /* board coordinates of the piece's orig pos */
-  ChessSquare piece;
 } DragInfo;
 
-static DragInfo dragInfo = { {-1,-1}, {-1,-1}, {-1,-1}, {-1,-1}, EmptySquare };
+static DragInfo dragInfo = { {-1,-1}, {-1,-1}, {-1,-1}, {-1,-1} };
 
 typedef struct {
   POINT sq[2];	  /* board coordinates of from, to squares */
@@ -137,14 +112,6 @@ typedef struct {
 
 static HighlightInfo highlightInfo        = { {{-1, -1}, {-1, -1}} };
 static HighlightInfo premoveHighlightInfo = { {{-1, -1}, {-1, -1}} };
-static HighlightInfo partnerHighlightInfo = { {{-1, -1}, {-1, -1}} };
-static HighlightInfo oldPartnerHighlight  = { {{-1, -1}, {-1, -1}} };
-
-typedef struct { // [HGM] atomic
-  int fromX, fromY, toX, toY, radius;
-} ExplodeInfo;
-
-static ExplodeInfo explodeInfo;
 
 /* Window class names */
 char szAppName[] = "WinBoard";
@@ -152,22 +119,19 @@ char szConsoleName[] = "WBConsole";
 
 /* Title bar text */
 char szTitle[] = "WinBoard";
-char szConsoleTitle[] = "I C S Interaction";
+char szConsoleTitle[] = "ICS Interaction";
 
 char *programName;
 char *settingsFileName;
-Boolean saveSettingsOnExit;
+BOOLEAN saveSettingsOnExit;
 char installDir[MSG_SIZ];
-int errorExitStatus;
 
 BoardSize boardSize;
-Boolean chessProgram;
-//static int boardX, boardY;
-int  minX, minY; // [HGM] placement: volatile limits on upper-left corner
-int squareSize, lineGap, minorSize, border;
-static int winW, winH;
-static RECT messageRect, whiteRect, blackRect, leftLogoRect, rightLogoRect; // [HGM] logo
-static int logoHeight = 0;
+BOOLEAN chessProgram;
+static int boardX, boardY, consoleX, consoleY, consoleW, consoleH;
+static int squareSize, lineGap;
+static int winWidth, winHeight;
+static RECT messageRect, whiteRect, blackRect;
 static char messageText[MESSAGE_TEXT_MAX];
 static int clockTimerEvent = 0;
 static int loadGameTimerEvent = 0;
@@ -180,27 +144,27 @@ char *icsNames;
 char *firstChessProgramNames;
 char *secondChessProgramNames;
 
+#define ARG_MAX 20000
+
 #define PALETTESIZE 256
 
 HINSTANCE hInst;          /* current instance */
-Boolean alwaysOnTop = FALSE;
+HWND hwndMain = NULL;        /* root window*/
+HWND hwndConsole = NULL;
+BOOLEAN alwaysOnTop = FALSE;
 RECT boardRect;
 COLORREF lightSquareColor, darkSquareColor, whitePieceColor, 
   blackPieceColor, highlightSquareColor, premoveHighlightColor;
 HPALETTE hPal;
 ColorClass currentColorClass;
 
-static HWND savedHwnd;
 HWND hCommPort = NULL;    /* currently open comm port */
 static HWND hwndPause;    /* pause button */
-static HBITMAP pieceBitmap[3][(int) BlackPawn]; /* [HGM] nr of bitmaps referred to bP in stead of wK */
+static HBITMAP pieceBitmap[3][(int) WhiteKing + 1];
 static HBRUSH lightSquareBrush, darkSquareBrush,
-  blackSquareBrush, /* [HGM] for band between board and holdings */
-  explodeBrush,     /* [HGM] atomic */
-  markerBrush,      /* [HGM] markers */
-  whitePieceBrush, blackPieceBrush, iconBkgndBrush /*, outlineBrush*/;
-static POINT gridEndpoints[(BOARD_RANKS + BOARD_FILES + 2) * 2];
-static DWORD gridVertexCounts[BOARD_RANKS + BOARD_FILES + 2];
+  whitePieceBrush, blackPieceBrush, iconBkgndBrush, outlineBrush;
+static POINT gridEndpoints[(BOARD_SIZE + 1) * 4];
+static DWORD gridVertexCounts[(BOARD_SIZE + 1) * 2];
 static HPEN gridPen = NULL;
 static HPEN highlightPen = NULL;
 static HPEN premovePen = NULL;
@@ -210,313 +174,19 @@ static HICON iconWhite, iconBlack, iconCurrent;
 static int doingSizing = FALSE;
 static int lastSizing = 0;
 static int prevStderrPort;
-static HBITMAP userLogo;
 
-static HBITMAP liteBackTexture = NULL;
-static HBITMAP darkBackTexture = NULL;
-static int liteBackTextureMode = BACK_TEXTURE_MODE_PLAIN;
-static int darkBackTextureMode = BACK_TEXTURE_MODE_PLAIN;
-static int backTextureSquareSize = 0;
-static struct { int x; int y; int mode; } backTextureSquareInfo[BOARD_RANKS][BOARD_FILES];
-
-#if __GNUC__ && !defined(_winmajor)
+#if __GNUC__ || !defined(_winmajor)
 #define oldDialog 0 /* cygwin doesn't define _winmajor; mingw does */
 #else
-#if defined(_winmajor)
 #define oldDialog (_winmajor < 4)
-#else
-#define oldDialog 0
-#endif
 #endif
 
-#define INTERNATIONAL
-
-#ifdef INTERNATIONAL
-#  define _(s) T_(s)
-#  define N_(s) s
-#else
-#  define _(s) s
-#  define N_(s) s
-#  define T_(s) s
-#  define Translate(x, y)
-#  define LoadLanguageFile(s)
-#endif
-
-#ifdef INTERNATIONAL
-
-Boolean barbaric; // flag indicating if translation is needed
-
-// list of item numbers used in each dialog (used to alter language at run time)
-
-#define ABOUTBOX -1  /* not sure why these are needed */
-#define ABOUTBOX2 -1
-
-int dialogItems[][42] = {
-{ ABOUTBOX, IDOK, OPT_MESS, 400 }, 
-{ DLG_TimeControl, IDC_Babble, OPT_TCUseMoves, OPT_TCUseInc, OPT_TCUseFixed, 
-  OPT_TCtext1, OPT_TCtext2, OPT_TCitext1, OPT_TCitext2, OPT_TCftext, GPB_Factors,   IDC_Factor1, IDC_Factor2, IDOK, IDCANCEL }, 
-{ DLG_LoadOptions, OPT_Autostep, OPT_AStext1, OPT_Exact, OPT_Subset, OPT_Struct, OPT_Material, OPT_Range, OPT_Difference,
-  OPT_elo1t, OPT_elo2t, OPT_datet, OPT_Stretch, OPT_Stretcht, OPT_Reversed, OPT_SearchMode, OPT_Mirror, OPT_thresholds, IDOK, IDCANCEL }, 
-{ DLG_SaveOptions, OPT_Autosave, OPT_AVPrompt, OPT_AVToFile, OPT_AVBrowse,
-  801, OPT_PGN, OPT_Old, OPT_OutOfBookInfo, IDOK, IDCANCEL }, 
-{ 1536, 1090, IDC_Directories, 1089, 1091, IDOK, IDCANCEL, 1038, IDC_IndexNr, 1037 }, 
-{ DLG_CommPort, IDOK, IDCANCEL, IDC_Port, IDC_Rate, IDC_Bits, IDC_Parity,
-  IDC_Stop, IDC_Flow, OPT_SerialHelp }, 
-{ DLG_EditComment, IDOK, OPT_CancelComment, OPT_ClearComment, OPT_EditComment }, 
-{ DLG_PromotionKing, PB_Chancellor, PB_Archbishop, PB_Queen, PB_Rook, 
-  PB_Bishop, PB_Knight, PB_King, IDCANCEL, IDC_Yes, IDC_No, IDC_Centaur }, 
-{ ABOUTBOX2, IDC_ChessBoard }, 
-{ DLG_GameList, OPT_GameListLoad, OPT_GameListPrev, OPT_GameListNext, 
-  OPT_GameListClose, IDC_GameListDoFilter }, 
-{ DLG_EditTags, IDOK, OPT_TagsCancel, OPT_EditTags }, 
-{ DLG_Error, IDOK }, 
-{ DLG_Colorize, IDOK, IDCANCEL, OPT_ChooseColor, OPT_Bold, OPT_Italic,
-  OPT_Underline, OPT_Strikeout, OPT_Sample }, 
-{ DLG_Question, IDOK, IDCANCEL, OPT_QuestionText }, 
-{ DLG_Startup, IDC_Welcome, OPT_ChessEngine, OPT_ChessServer, OPT_View,
-  IDC_SPECIFY_ENG_STATIC, IDC_SPECIFY_SERVER_STATIC, OPT_AnyAdditional,
-  IDOK, IDCANCEL, IDM_HELPCONTENTS }, 
-{ DLG_IndexNumber, IDC_Index }, 
-{ DLG_TypeInMove, IDOK, IDCANCEL }, 
-{ DLG_TypeInName, IDOK, IDCANCEL }, 
-{ DLG_Sound, IDC_Event, OPT_NoSound, OPT_DefaultBeep, OPT_BuiltInSound,
-  OPT_WavFile, OPT_BrowseSound, OPT_DefaultSounds, IDOK, IDCANCEL, OPT_PlaySound }, 
-{ DLG_GeneralOptions, IDOK, IDCANCEL, OPT_AlwaysOnTop, OPT_HighlightLastMove,
-  OPT_AlwaysQueen, OPT_PeriodicUpdates, OPT_AnimateDragging, OPT_PonderNextMove,
-  OPT_AnimateMoving, OPT_PopupExitMessage, OPT_AutoFlag, OPT_PopupMoveErrors,
-  OPT_AutoFlipView, OPT_ShowButtonBar, OPT_AutoRaiseBoard, OPT_ShowCoordinates,
-  OPT_Blindfold, OPT_ShowThinking, OPT_HighlightDragging, OPT_TestLegality,
-  OPT_SaveExtPGN, OPT_HideThinkFromHuman, OPT_ExtraInfoInMoveHistory,
-  OPT_HighlightMoveArrow, OPT_AutoLogo ,OPT_SmartMove }, 
-{ DLG_IcsOptions, IDOK, IDCANCEL, OPT_AutoComment, OPT_AutoKibitz, OPT_AutoObserve,
-  OPT_GetMoveList, OPT_LocalLineEditing, OPT_QuietPlay, OPT_SeekGraph, OPT_AutoRefresh,
-  OPT_BgObserve, OPT_DualBoard, OPT_Premove, OPT_PremoveWhite, OPT_PremoveBlack,
-  OPT_SmartMove, OPT_IcsAlarm, IDC_Sec, OPT_ChooseShoutColor, OPT_ChooseSShoutColor,
-  OPT_ChooseChannel1Color, OPT_ChooseChannelColor, OPT_ChooseKibitzColor,
-  OPT_ChooseTellColor, OPT_ChooseChallengeColor, OPT_ChooseRequestColor,
-  OPT_ChooseSeekColor, OPT_ChooseNormalColor, OPT_ChooseBackgroundColor,
-  OPT_DefaultColors, OPT_DontColorize, IDC_Boxes, GPB_Colors, GPB_Premove,
-  GPB_General, GPB_Alarm, OPT_AutoCreate }, 
-{ DLG_BoardOptions, IDOK, IDCANCEL, OPT_SizeTiny, OPT_SizeTeeny, OPT_SizeDinky,
-  OPT_SizePetite, OPT_SizeSlim, OPT_SizeSmall, OPT_SizeMediocre, OPT_SizeMiddling,
-  OPT_SizeAverage, OPT_SizeModerate, OPT_SizeMedium, OPT_SizeBulky, OPT_SizeLarge,
-  OPT_SizeBig, OPT_SizeHuge, OPT_SizeGiant, OPT_SizeColossal, OPT_SizeTitanic,
-  OPT_ChooseLightSquareColor, OPT_ChooseDarkSquareColor, OPT_ChooseWhitePieceColor,
-  OPT_ChooseBlackPieceColor, OPT_ChooseHighlightSquareColor, OPT_ChoosePremoveHighlightColor,
-  OPT_Monochrome, OPT_AllWhite, OPT_UpsideDown, OPT_DefaultBoardColors, GPB_Colors,
-  IDC_Light, IDC_Dark, IDC_White, IDC_Black, IDC_High, IDC_PreHigh, GPB_Size, OPT_Bitmaps, OPT_PieceFont, OPT_Grid }, 
-{ DLG_NewVariant, IDOK, IDCANCEL, OPT_VariantNormal, OPT_VariantFRC, OPT_VariantWildcastle,
-  OPT_VariantNocastle, OPT_VariantLosers, OPT_VariantGiveaway, OPT_VariantSuicide,
-  OPT_Variant3Check, OPT_VariantTwoKings, OPT_VariantAtomic, OPT_VariantCrazyhouse,
-  OPT_VariantBughouse, OPT_VariantTwilight, OPT_VariantShogi, OPT_VariantSuper,
-  OPT_VariantKnightmate, OPT_VariantBerolina, OPT_VariantCylinder, OPT_VariantFairy,
-  OPT_VariantMakruk, OPT_VariantGothic, OPT_VariantCapablanca, OPT_VariantJanus,
-  OPT_VariantCRC, OPT_VariantFalcon, OPT_VariantCourier, OPT_VariantGreat, OPT_VariantSChess,
-  OPT_VariantShatranj, OPT_VariantXiangqi, GPB_Variant, GPB_Board, IDC_Height,
-  IDC_Width, IDC_Hand, IDC_Pieces, IDC_Def }, 
-{ DLG_Fonts, IDOK, IDCANCEL, OPT_ChooseClockFont, OPT_ChooseMessageFont,
-  OPT_ChooseCoordFont, OPT_ChooseTagFont, OPT_ChooseCommentsFont,  OPT_ChooseConsoleFont, OPT_ChooseMoveHistoryFont, OPT_DefaultFonts,
-  OPT_ClockFont, OPT_MessageFont, OPT_CoordFont, OPT_EditTagsFont, OPT_ChoosePieceFont, OPT_MessageFont8,
-  OPT_SampleGameListFont, OPT_ChooseGameListFont, OPT_MessageFont7, 
-  OPT_CommentsFont, OPT_MessageFont5, GPB_Current, GPB_All, OPT_MessageFont6 }, 
-{ DLG_NewGameFRC, IDC_NFG_Label, IDC_NFG_Random, IDOK, IDCANCEL }, 
-{ DLG_GameListOptions, IDC_GLT, IDC_GLT_Up, IDC_GLT_Down, IDC_GLT_Restore,
-  IDC_GLT_Default, IDOK, IDCANCEL, IDC_GLT_RestoreTo }, 
-{ DLG_MoveHistory }, 
-{ DLG_EvalGraph }, 
-{ DLG_EngineOutput, IDC_EngineLabel1, IDC_Engine1_NPS, IDC_EngineLabel2, IDC_Engine2_NPS }, 
-{ DLG_Chat, IDC_Partner, IDC_Clear, IDC_Send,  }, 
-{ DLG_EnginePlayOptions, IDC_EpPonder, IDC_EpShowThinking, IDC_EpHideThinkingHuman,
-  IDC_EpPeriodicUpdates, GPB_Adjudications, IDC_Draw, IDC_Moves, IDC_Threshold,
-  IDC_Centi, IDC_TestClaims, IDC_DetectMates, IDC_MaterialDraws, IDC_TrivialDraws,
-  GPB_Apply, IDC_Rule, IDC_Repeats, IDC_ScoreAbs1, IDC_ScoreAbs2, IDOK, IDCANCEL }, 
-{ DLG_OptionsUCI, IDC_PolyDir, IDC_BrowseForPolyglotDir, IDC_Hash, IDC_Path,
-  IDC_BrowseForEGTB, IDC_Cache, IDC_UseBook, IDC_BrowseForBook, IDC_CPU, IDC_OwnBook1,
-  IDC_OwnBook2, IDC_Depth, IDC_Variation, IDC_DefGames, IDOK, IDCANCEL },
-{ 0 }
+char *defaultTextAttribs[] = 
+{
+  COLOR_SHOUT, COLOR_SSHOUT, COLOR_CHANNEL1, COLOR_CHANNEL, COLOR_KIBITZ,
+  COLOR_TELL, COLOR_CHALLENGE, COLOR_REQUEST, COLOR_SEEK, COLOR_NORMAL,
+  COLOR_NONE
 };
-
-static char languageBuf[70000], *foreign[1000], *english[1000], *languageFile[MSG_SIZ];
-static int lastChecked;
-static char oldLanguage[MSG_SIZ], *menuText[10][30];
-extern int tinyLayout;
-extern char * menuBarText[][10];
-
-void
-LoadLanguageFile(char *name)
-{   //load the file with translations, and make a list of the strings to be translated, and their translations
-    FILE *f;
-    int i=0, j=0, n=0, k;
-    char buf[MSG_SIZ];
-
-    if(!name || name[0] == NULLCHAR) return;
-      snprintf(buf, MSG_SIZ, "%s%s", name, strchr(name, '.') ? "" : ".lng"); // auto-append lng extension
-    appData.language = oldLanguage;
-    if(!strcmp(buf, oldLanguage)) { barbaric = 1; return; } // this language already loaded; just switch on
-    if((f = fopen(buf, "r")) == NULL) return;
-    while((k = fgetc(f)) != EOF) {
-        if(i >= sizeof(languageBuf)) { DisplayError("Language file too big", 0); return; }
-        languageBuf[i] = k;
-        if(k == '\n') {
-            if(languageBuf[n] == '"' && languageBuf[i-1] == '"') {
-                char *p;
-                if(p = strstr(languageBuf + n + 1, "\" === \"")) {
-                    if(p > languageBuf+n+2 && p+8 < languageBuf+i) {
-                        if(j >= sizeof(english)) { DisplayError("Too many translated strings", 0); return; }
-                        english[j] = languageBuf + n + 1; *p = 0;
-                        foreign[j++] = p + 7; languageBuf[i-1] = 0;
-//if(appData.debugMode) fprintf(debugFP, "translation: replace '%s' by '%s'\n", english[j-1], foreign[j-1]);
-                    }
-                }
-            }
-            n = i + 1;
-        } else if(i > 0 && languageBuf[i-1] == '\\') {
-            switch(k) {
-              case 'n': k = '\n'; break;
-              case 'r': k = '\r'; break;
-              case 't': k = '\t'; break;
-            }
-            languageBuf[--i] = k;
-        }
-        i++;
-    }
-    fclose(f);
-    barbaric = (j != 0);
-    safeStrCpy(oldLanguage, buf, sizeof(oldLanguage)/sizeof(oldLanguage[0]) );
-}
-
-char *
-T_(char *s)
-{   // return the translation of the given string
-    // efficiency can be improved a lot...
-    int i=0;
-    static char buf[MSG_SIZ];
-//if(appData.debugMode) fprintf(debugFP, "T_(%s)\n", s);
-    if(!barbaric) return s;
-    if(!s) return ""; // sanity
-    while(english[i]) {
-        if(!strcmp(s, english[i])) return foreign[i];
-	if(english[i][0] == '%' && strstr(s, english[i]+1) == s) { // allow translation of strings with variable ending
-	    snprintf(buf, MSG_SIZ, "%s%s", foreign[i], s + strlen(english[i]+1)); // keep unmatched portion
-	    return buf;
-	}
-        i++;
-    }
-    return s;
-}
-
-void
-Translate(HWND hDlg, int dialogID)
-{   // translate all text items in the given dialog
-    int i=0, j, k;
-    char buf[MSG_SIZ], *s;
-    if(!barbaric) return;
-    while(dialogItems[i][0] && dialogItems[i][0] != dialogID) i++; // find the dialog description
-    if(dialogItems[i][0] != dialogID) return; // unknown dialog, should not happen
-    GetWindowText( hDlg, buf, MSG_SIZ );
-    s = T_(buf);
-    if(strcmp(buf, s)) SetWindowText(hDlg, s); // replace by translated string (if different)
-    for(j=1; k=dialogItems[i][j]; j++) { // translate all listed dialog items
-        GetDlgItemText(hDlg, k, buf, MSG_SIZ);
-        if(strlen(buf) == 0) continue;
-        s = T_(buf);
-        if(strcmp(buf, s)) SetDlgItemText(hDlg, k, s); // replace by translated string (if different)
-    }
-}
-
-HMENU
-TranslateOneMenu(int i, HMENU subMenu)
-{
-    int j;
-    static MENUITEMINFO info;
-
-    info.cbSize = sizeof(MENUITEMINFO);
-    info.fMask = MIIM_STATE | MIIM_TYPE;
-          for(j=GetMenuItemCount(subMenu)-1; j>=0; j--){
-            char buf[MSG_SIZ];
-            info.dwTypeData = buf;
-            info.cch = sizeof(buf);
-            GetMenuItemInfo(subMenu, j, TRUE, &info);
-            if(i < 10) {
-                if(menuText[i][j]) safeStrCpy(buf, menuText[i][j], sizeof(buf)/sizeof(buf[0]) );
-                else menuText[i][j] = strdup(buf); // remember original on first change
-            }
-            if(buf[0] == NULLCHAR) continue;
-            info.dwTypeData = T_(buf);
-            info.cch = strlen(buf)+1;
-            SetMenuItemInfo(subMenu, j, TRUE, &info);
-          }
-    return subMenu;
-}
-
-void
-TranslateMenus(int addLanguage)
-{
-    int i;
-    WIN32_FIND_DATA fileData;
-    HANDLE hFind;
-#define IDM_English 1970
-    if(1) {
-        HMENU mainMenu = GetMenu(hwndMain);
-        for (i=GetMenuItemCount(mainMenu)-1; i>=0; i--) {
-          HMENU subMenu = GetSubMenu(mainMenu, i);
-          ModifyMenu(mainMenu, i, MF_STRING|MF_BYPOSITION|MF_POPUP|EnableMenuItem(mainMenu, i, MF_BYPOSITION),
-                                                                  (UINT) subMenu, T_(menuBarText[tinyLayout][i]));
-          TranslateOneMenu(i, subMenu);
-        }
-        DrawMenuBar(hwndMain);
-    }
-
-    if(!addLanguage) return;
-    if((hFind = FindFirstFile("*.LNG", &fileData)) != INVALID_HANDLE_VALUE) {
-        HMENU mainMenu = GetMenu(hwndMain);
-        HMENU subMenu = GetSubMenu(mainMenu, GetMenuItemCount(mainMenu)-1);
-        AppendMenu(subMenu, MF_SEPARATOR, (UINT_PTR) 0, NULL);
-        AppendMenu(subMenu, MF_ENABLED|MF_STRING|(barbaric?MF_UNCHECKED:MF_CHECKED), (UINT_PTR) IDM_English, (LPCTSTR) "English");
-        i = 0; lastChecked = IDM_English;
-        do {
-            char *p, *q = fileData.cFileName;
-            int checkFlag = MF_UNCHECKED;
-            languageFile[i] = strdup(q);
-            if(barbaric && !strcmp(oldLanguage, q)) {
-                checkFlag = MF_CHECKED;
-                lastChecked = IDM_English + i + 1;
-                CheckMenuItem(mainMenu, IDM_English, MF_BYCOMMAND|MF_UNCHECKED);
-            }
-            *q = ToUpper(*q); while(*++q) *q = ToLower(*q);
-            p = strstr(fileData.cFileName, ".lng");
-            if(p) *p = 0;
-            AppendMenu(subMenu, MF_ENABLED|MF_STRING|checkFlag, (UINT_PTR) IDM_English + ++i, (LPCTSTR) fileData.cFileName);
-        } while(FindNextFile(hFind, &fileData));
-        FindClose(hFind);
-    }
-}
-
-#endif
-
-#define IDM_RecentEngines 3000
-
-void
-RecentEngineMenu (char *s)
-{
-    if(appData.icsActive) return;
-    if(appData.recentEngines > 0 && *s) { // feature is on, and list non-empty
-	HMENU mainMenu = GetMenu(hwndMain);
-	HMENU subMenu = GetSubMenu(mainMenu, 5); // Engine menu
-	int i=IDM_RecentEngines;
-	recentEngines = strdup(appData.recentEngineList); // remember them as they are in menu
-	AppendMenu(subMenu, MF_SEPARATOR, (UINT_PTR) 0, NULL);
-	while(*s) {
-	  char *p = strchr(s, '\n');
-	  if(p == NULL) return; // malformed!
-	  *p = NULLCHAR;
-	  AppendMenu(subMenu, MF_ENABLED|MF_STRING|MF_UNCHECKED, (UINT_PTR) i++, (LPCTSTR) s);
-	  *p = '\n';
-	  s = p+1;
-	}
-    }
-}
-
 
 typedef struct {
   char *name;
@@ -550,27 +220,63 @@ SizeInfo sizeInfo[] =
   { NULL, 0, 0, 0, 0, 0, 0 }
 };
 
-#define MF(x) {x, {{0,}, 0. }, {0, }, 0}
+#define MF(x) {x, {0, }, {0, }, 0}
 MyFont fontRec[NUM_SIZES][NUM_FONTS] =
 {
-  { MF(CLOCK_FONT_TINY), MF(MESSAGE_FONT_TINY), MF(COORD_FONT_TINY), MF(CONSOLE_FONT_TINY), MF(COMMENT_FONT_TINY), MF(EDITTAGS_FONT_TINY), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_TEENY), MF(MESSAGE_FONT_TEENY), MF(COORD_FONT_TEENY), MF(CONSOLE_FONT_TEENY), MF(COMMENT_FONT_TEENY), MF(EDITTAGS_FONT_TEENY), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_DINKY), MF(MESSAGE_FONT_DINKY), MF(COORD_FONT_DINKY), MF(CONSOLE_FONT_DINKY), MF(COMMENT_FONT_DINKY), MF(EDITTAGS_FONT_DINKY), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_PETITE), MF(MESSAGE_FONT_PETITE), MF(COORD_FONT_PETITE), MF(CONSOLE_FONT_PETITE), MF(COMMENT_FONT_PETITE), MF(EDITTAGS_FONT_PETITE), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_SLIM), MF(MESSAGE_FONT_SLIM), MF(COORD_FONT_SLIM), MF(CONSOLE_FONT_SLIM), MF(COMMENT_FONT_SLIM), MF(EDITTAGS_FONT_SLIM), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_SMALL), MF(MESSAGE_FONT_SMALL), MF(COORD_FONT_SMALL), MF(CONSOLE_FONT_SMALL), MF(COMMENT_FONT_SMALL), MF(EDITTAGS_FONT_SMALL), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_MEDIOCRE), MF(MESSAGE_FONT_MEDIOCRE), MF(COORD_FONT_MEDIOCRE), MF(CONSOLE_FONT_MEDIOCRE), MF(COMMENT_FONT_MEDIOCRE), MF(EDITTAGS_FONT_MEDIOCRE), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_MIDDLING), MF(MESSAGE_FONT_MIDDLING), MF(COORD_FONT_MIDDLING), MF(CONSOLE_FONT_MIDDLING), MF(COMMENT_FONT_MIDDLING), MF(EDITTAGS_FONT_MIDDLING), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_AVERAGE), MF(MESSAGE_FONT_AVERAGE), MF(COORD_FONT_AVERAGE), MF(CONSOLE_FONT_AVERAGE), MF(COMMENT_FONT_AVERAGE), MF(EDITTAGS_FONT_AVERAGE), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_MODERATE), MF(MESSAGE_FONT_MODERATE), MF(COORD_FONT_MODERATE), MF(CONSOLE_FONT_MODERATE), MF(COMMENT_FONT_MODERATE), MF(EDITTAGS_FONT_MODERATE), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_MEDIUM), MF(MESSAGE_FONT_MEDIUM), MF(COORD_FONT_MEDIUM), MF(CONSOLE_FONT_MEDIUM), MF(COMMENT_FONT_MEDIUM), MF(EDITTAGS_FONT_MEDIUM), MF(MOVEHISTORY_FONT_ALL),  MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_BULKY), MF(MESSAGE_FONT_BULKY), MF(COORD_FONT_BULKY), MF(CONSOLE_FONT_BULKY), MF(COMMENT_FONT_BULKY), MF(EDITTAGS_FONT_BULKY), MF(MOVEHISTORY_FONT_ALL),  MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_LARGE), MF(MESSAGE_FONT_LARGE), MF(COORD_FONT_LARGE), MF(CONSOLE_FONT_LARGE), MF(COMMENT_FONT_LARGE), MF(EDITTAGS_FONT_LARGE), MF(MOVEHISTORY_FONT_ALL),  MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_BIG), MF(MESSAGE_FONT_BIG), MF(COORD_FONT_BIG), MF(CONSOLE_FONT_BIG), MF(COMMENT_FONT_BIG), MF(EDITTAGS_FONT_BIG), MF(MOVEHISTORY_FONT_ALL),  MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_HUGE), MF(MESSAGE_FONT_HUGE), MF(COORD_FONT_HUGE), MF(CONSOLE_FONT_HUGE), MF(COMMENT_FONT_HUGE), MF(EDITTAGS_FONT_HUGE), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_GIANT), MF(MESSAGE_FONT_GIANT), MF(COORD_FONT_GIANT), MF(CONSOLE_FONT_GIANT), MF(COMMENT_FONT_GIANT), MF(EDITTAGS_FONT_GIANT), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_COLOSSAL), MF(MESSAGE_FONT_COLOSSAL), MF(COORD_FONT_COLOSSAL), MF(CONSOLE_FONT_COLOSSAL), MF(COMMENT_FONT_COLOSSAL), MF(EDITTAGS_FONT_COLOSSAL), MF(MOVEHISTORY_FONT_ALL), MF (GAMELIST_FONT_ALL) },
-  { MF(CLOCK_FONT_TITANIC), MF(MESSAGE_FONT_TITANIC), MF(COORD_FONT_TITANIC), MF(CONSOLE_FONT_TITANIC), MF(COMMENT_FONT_TITANIC), MF(EDITTAGS_FONT_TITANIC), MF(MOVEHISTORY_FONT_ALL), MF(GAMELIST_FONT_ALL) },
+  { MF(CLOCK_FONT_TINY), MF(MESSAGE_FONT_TINY), 
+    MF(COORD_FONT_TINY), MF(CONSOLE_FONT_TINY),
+    MF(COMMENT_FONT_TINY), MF(EDITTAGS_FONT_TINY) },
+  { MF(CLOCK_FONT_TEENY), MF(MESSAGE_FONT_TEENY), 
+    MF(COORD_FONT_TEENY), MF(CONSOLE_FONT_TEENY),
+    MF(COMMENT_FONT_TEENY), MF(EDITTAGS_FONT_TEENY) },
+  { MF(CLOCK_FONT_DINKY), MF(MESSAGE_FONT_DINKY),
+    MF(COORD_FONT_DINKY), MF(CONSOLE_FONT_DINKY),
+    MF(COMMENT_FONT_DINKY), MF(EDITTAGS_FONT_DINKY) },
+  { MF(CLOCK_FONT_PETITE), MF(MESSAGE_FONT_PETITE),
+    MF(COORD_FONT_PETITE), MF(CONSOLE_FONT_PETITE),
+    MF(COMMENT_FONT_PETITE), MF(EDITTAGS_FONT_PETITE) },
+  { MF(CLOCK_FONT_SLIM), MF(MESSAGE_FONT_SLIM),
+    MF(COORD_FONT_SLIM), MF(CONSOLE_FONT_SLIM),
+    MF(COMMENT_FONT_SLIM), MF(EDITTAGS_FONT_SLIM) },
+  { MF(CLOCK_FONT_SMALL), MF(MESSAGE_FONT_SMALL),
+    MF(COORD_FONT_SMALL), MF(CONSOLE_FONT_SMALL),
+    MF(COMMENT_FONT_SMALL), MF(EDITTAGS_FONT_SMALL) },
+  { MF(CLOCK_FONT_MEDIOCRE), MF(MESSAGE_FONT_MEDIOCRE),
+    MF(COORD_FONT_MEDIOCRE), MF(CONSOLE_FONT_MEDIOCRE),
+    MF(COMMENT_FONT_MEDIOCRE), MF(EDITTAGS_FONT_MEDIOCRE) },
+  { MF(CLOCK_FONT_MIDDLING), MF(MESSAGE_FONT_MIDDLING),
+    MF(COORD_FONT_MIDDLING), MF(CONSOLE_FONT_MIDDLING),
+    MF(COMMENT_FONT_MIDDLING), MF(EDITTAGS_FONT_MIDDLING) },
+  { MF(CLOCK_FONT_AVERAGE), MF(MESSAGE_FONT_AVERAGE),
+    MF(COORD_FONT_AVERAGE), MF(CONSOLE_FONT_AVERAGE),
+    MF(COMMENT_FONT_AVERAGE), MF(EDITTAGS_FONT_AVERAGE) },
+  { MF(CLOCK_FONT_MODERATE), MF(MESSAGE_FONT_MODERATE),
+    MF(COORD_FONT_MODERATE), MF(CONSOLE_FONT_MODERATE),
+    MF(COMMENT_FONT_MODERATE), MF(EDITTAGS_FONT_MODERATE) },
+  { MF(CLOCK_FONT_MEDIUM), MF(MESSAGE_FONT_MEDIUM),
+    MF(COORD_FONT_MEDIUM), MF(CONSOLE_FONT_MEDIUM),
+    MF(COMMENT_FONT_MEDIUM), MF(EDITTAGS_FONT_MEDIUM) },
+  { MF(CLOCK_FONT_BULKY), MF(MESSAGE_FONT_BULKY),
+    MF(COORD_FONT_BULKY), MF(CONSOLE_FONT_BULKY),
+    MF(COMMENT_FONT_BULKY), MF(EDITTAGS_FONT_BULKY) },
+  { MF(CLOCK_FONT_LARGE), MF(MESSAGE_FONT_LARGE),
+    MF(COORD_FONT_LARGE), MF(CONSOLE_FONT_LARGE),
+    MF(COMMENT_FONT_LARGE), MF(EDITTAGS_FONT_LARGE) },
+  { MF(CLOCK_FONT_BIG), MF(MESSAGE_FONT_BIG),
+    MF(COORD_FONT_BIG), MF(CONSOLE_FONT_BIG),
+    MF(COMMENT_FONT_BIG), MF(EDITTAGS_FONT_BIG) },
+  { MF(CLOCK_FONT_HUGE), MF(MESSAGE_FONT_HUGE),
+    MF(COORD_FONT_HUGE), MF(CONSOLE_FONT_HUGE),
+    MF(COMMENT_FONT_HUGE), MF(EDITTAGS_FONT_HUGE) },
+  { MF(CLOCK_FONT_GIANT), MF(MESSAGE_FONT_GIANT),
+    MF(COORD_FONT_GIANT), MF(CONSOLE_FONT_GIANT),
+    MF(COMMENT_FONT_GIANT), MF(EDITTAGS_FONT_GIANT) },
+  { MF(CLOCK_FONT_COLOSSAL), MF(MESSAGE_FONT_COLOSSAL),
+    MF(COORD_FONT_COLOSSAL), MF(CONSOLE_FONT_COLOSSAL),
+    MF(COMMENT_FONT_COLOSSAL), MF(EDITTAGS_FONT_COLOSSAL) },
+  { MF(CLOCK_FONT_TITANIC), MF(MESSAGE_FONT_TITANIC),
+    MF(COORD_FONT_TITANIC), MF(CONSOLE_FONT_TITANIC),
+    MF(COMMENT_FONT_TITANIC), MF(EDITTAGS_FONT_TITANIC) },
 };
 
 MyFont *font[NUM_SIZES][NUM_FONTS];
@@ -595,10 +301,10 @@ MyButtonDesc buttonDesc[N_BUTTONS] =
 };
 
 int tinyLayout = 0, smallLayout = 0;
-#define MENU_BAR_ITEMS 9
+#define MENU_BAR_ITEMS 6
 char *menuBarText[2][MENU_BAR_ITEMS+1] = {
-  { N_("&File"), N_("&Edit"), N_("&View"), N_("&Mode"), N_("&Action"), N_("E&ngine"), N_("&Options"), N_("&Help"), NULL },
-  { N_("&F"), N_("&E"), N_("&V"), N_("&M"), N_("&A"), N_("&N"), N_("&O"), N_("&H"), NULL },
+  { "&File", "&Mode", "&Action", "&Step", "&Options", "&Help", NULL },
+  { "&F", "&M", "&A", "&S", "&O", "&H", NULL },
 };
 
 
@@ -606,17 +312,17 @@ MySound sounds[(int)NSoundClasses];
 MyTextAttribs textAttribs[(int)NColorClasses];
 
 MyColorizeAttribs colorizeAttribs[] = {
-  { (COLORREF)0, 0, N_("Shout Text") },
-  { (COLORREF)0, 0, N_("SShout/CShout") },
-  { (COLORREF)0, 0, N_("Channel 1 Text") },
-  { (COLORREF)0, 0, N_("Channel Text") },
-  { (COLORREF)0, 0, N_("Kibitz Text") },
-  { (COLORREF)0, 0, N_("Tell Text") },
-  { (COLORREF)0, 0, N_("Challenge Text") },
-  { (COLORREF)0, 0, N_("Request Text") },
-  { (COLORREF)0, 0, N_("Seek Text") },
-  { (COLORREF)0, 0, N_("Normal Text") },
-  { (COLORREF)0, 0, N_("None") }
+  { (COLORREF)0, 0, "Shout Text" },
+  { (COLORREF)0, 0, "SShout/CShout" },
+  { (COLORREF)0, 0, "Channel 1 Text" },
+  { (COLORREF)0, 0, "Channel Text" },
+  { (COLORREF)0, 0, "Kibitz Text" },
+  { (COLORREF)0, 0, "Tell Text" },
+  { (COLORREF)0, 0, "Challenge Text" },
+  { (COLORREF)0, 0, "Request Text" },
+  { (COLORREF)0, 0, "Seek Text" },
+  { (COLORREF)0, 0, "Normal Text" },
+  { (COLORREF)0, 0, "None" }
 };
 
 
@@ -625,7 +331,15 @@ static char *commentTitle;
 static char *commentText;
 static int commentIndex;
 static Boolean editComment = FALSE;
+HWND commentDialog = NULL;
+BOOLEAN commentDialogUp = FALSE;
+static int commentX, commentY, commentH, commentW;
 
+static char *analysisTitle;
+static char *analysisText;
+HWND analysisDialog = NULL;
+BOOLEAN analysisDialogUp = FALSE;
+static int analysisX, analysisY, analysisH, analysisW;
 
 char errorTitle[MSG_SIZ];
 char errorMessage[2*MSG_SIZ];
@@ -687,38 +401,9 @@ LRESULT CALLBACK
   StartupDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
 VOID APIENTRY MenuPopup(HWND hwnd, POINT pt, HMENU hmenu, UINT def);
 void ParseIcsTextMenu(char *icsTextMenuString);
-VOID PopUpNameDialog(char firstchar);
+VOID PopUpMoveDialog(char firstchar);
 VOID UpdateSampleText(HWND hDlg, int id, MyColorizeAttribs *mca);
 
-/* [AS] */
-int NewGameFRC();
-int GameListOptions();
-
-int dummy; // [HGM] for obsolete args
-
-HWND hwndMain = NULL;        /* root window*/
-HWND hwndConsole = NULL;
-HWND commentDialog = NULL;
-HWND moveHistoryDialog = NULL;
-HWND evalGraphDialog = NULL;
-HWND engineOutputDialog = NULL;
-HWND gameListDialog = NULL;
-HWND editTagsDialog = NULL;
-
-int commentUp = FALSE;
-
-WindowPlacement wpMain;
-WindowPlacement wpConsole;
-WindowPlacement wpComment;
-WindowPlacement wpMoveHistory;
-WindowPlacement wpEvalGraph;
-WindowPlacement wpEngineOutput;
-WindowPlacement wpGameList;
-WindowPlacement wpTags;
-
-VOID EngineOptionsPopup(); // [HGM] settings
-
-VOID GothicPopUp(char *title, VariantClass variant);
 /*
  * Setting "frozen" should disable all user input other than deleting
  * the window.  We do this while engines are initializing themselves.
@@ -754,27 +439,6 @@ void ThawUI()
   DrawMenuBar(hwndMain);
 }
 
-/*static*/ int fromX = -1, fromY = -1, toX, toY; // [HGM] moved upstream, so JAWS can use them
-
-/* JAWS preparation patch (WinBoard for the sight impaired). Define required insertions as empty */
-#ifdef JAWS
-#include "jaws.c"
-#else
-#define JAWS_INIT
-#define JAWS_ARGS
-#define JAWS_ALT_INTERCEPT
-#define JAWS_KBUP_NAVIGATION
-#define JAWS_KBDOWN_NAVIGATION
-#define JAWS_MENU_ITEMS
-#define JAWS_SILENCE
-#define JAWS_REPLAY
-#define JAWS_ACCEL
-#define JAWS_COPYRIGHT
-#define JAWS_DELETE(X) X
-#define SAYMACHINEMOVE()
-#define SAY(X)
-#endif
-
 /*---------------------------------------------------------------------------*\
  *
  * WinMain
@@ -786,8 +450,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	LPSTR lpCmdLine, int nCmdShow)
 {
   MSG msg;
-  HANDLE hAccelMain, hAccelNoAlt, hAccelNoICS;
-//  INITCOMMONCONTROLSEX ex;
+  HANDLE hAccelMain, hAccelNoAlt;
 
   debugFP = stderr;
 
@@ -801,15 +464,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     return (FALSE);
   }
 
-  JAWS_INIT
-  TranslateMenus(1);
-
-//  InitCommonControlsEx(&ex);
-  InitCommonControls();
-
   hAccelMain = LoadAccelerators (hInstance, szAppName);
   hAccelNoAlt = LoadAccelerators (hInstance, "NO_ALT");
-  hAccelNoICS = LoadAccelerators( hInstance, "NO_ICS"); /* [AS] No Ctrl-V on ICS!!! */
 
   /* Acquire and dispatch messages until a WM_QUIT message is received. */
 
@@ -818,93 +474,12 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 		    0,    /* lowest message to examine */
 		    0))   /* highest message to examine */
     {
-
-      if(msg.message == WM_CHAR && msg.wParam == '\t') {
-	// [HGM] navigate: switch between all windows with tab
-	HWND e1 = NULL, e2 = NULL, mh = NULL, hInput = NULL, hText = NULL;
-	int i, currentElement = 0;
-
-	// first determine what element of the chain we come from (if any)
-	if(appData.icsActive) {
-	    hInput = GetDlgItem(hwndConsole, OPT_ConsoleInput);
-	    hText  = GetDlgItem(hwndConsole, OPT_ConsoleText);
-	}
-	if(engineOutputDialog && EngineOutputIsUp()) {
-	    e1 = GetDlgItem(engineOutputDialog, IDC_EngineMemo1);
-	    e2 = GetDlgItem(engineOutputDialog, IDC_EngineMemo2);
-	}
-	if(moveHistoryDialog && MoveHistoryIsUp()) {
-	    mh = GetDlgItem(moveHistoryDialog, IDC_MoveHistory);
-	}
-	if(msg.hwnd == hwndMain) currentElement = 7 ; else
-	if(msg.hwnd == engineOutputDialog) currentElement = 2; else
-	if(msg.hwnd == e1)                 currentElement = 2; else
-	if(msg.hwnd == e2)                 currentElement = 3; else
-	if(msg.hwnd == moveHistoryDialog) currentElement = 4; else
-	if(msg.hwnd == mh)                currentElement = 4; else
-	if(msg.hwnd == evalGraphDialog)    currentElement = 6; else
-	if(msg.hwnd == hText)  currentElement = 5; else
-	if(msg.hwnd == hInput) currentElement = 6; else
-	for (i = 0; i < N_BUTTONS; i++) {
-	    if (buttonDesc[i].hwnd == msg.hwnd) { currentElement = 1; break; }
-	}
-
-	// determine where to go to
-	if(currentElement) { HWND h = NULL; int direction = GetKeyState(VK_SHIFT) < 0 ? -1 : 1;
-	  do {
-	    currentElement = (currentElement + direction) % 7;
-	    switch(currentElement) {
-		case 0:
-		  h = hwndMain; break; // passing this case always makes the loop exit
-		case 1:
-		  h = buttonDesc[0].hwnd; break; // could be NULL
-		case 2:
-		  if(!EngineOutputIsUp()) continue; // skip closed auxiliary windows
-		  h = e1; break;
-		case 3:
-		  if(!EngineOutputIsUp()) continue;
-		  h = e2; break;
-		case 4:
-		  if(!MoveHistoryIsUp()) continue;
-		  h = mh; break;
-//		case 6: // input to eval graph does not seem to get here!
-//		  if(!EvalGraphIsUp()) continue;
-//		  h = evalGraphDialog; break;
-		case 5:
-		  if(!appData.icsActive) continue;
-		  SAY("display");
-		  h = hText; break;
-		case 6:
-		  if(!appData.icsActive) continue;
-		  SAY("input");
-		  h = hInput; break;
-	    }
-	  } while(h == 0);
-
-	  if(currentElement > 4 && IsIconic(hwndConsole)) ShowWindow(hwndConsole, SW_RESTORE);
-	  if(currentElement < 5 && IsIconic(hwndMain))    ShowWindow(hwndMain, SW_RESTORE); // all open together
-	  SetFocus(h);
-
-	  continue; // this message now has been processed
-	}
-      }
-
       if (!(commentDialog && IsDialogMessage(commentDialog, &msg)) &&
-          !(moveHistoryDialog && IsDialogMessage(moveHistoryDialog, &msg)) &&
-          !(evalGraphDialog && IsDialogMessage(evalGraphDialog, &msg)) &&
-          !(engineOutputDialog && IsDialogMessage(engineOutputDialog, &msg)) &&
 	  !(editTagsDialog && IsDialogMessage(editTagsDialog, &msg)) &&
 	  !(gameListDialog && IsDialogMessage(gameListDialog, &msg)) &&
 	  !(errorDialog && IsDialogMessage(errorDialog, &msg)) &&
-	  !(!frozen && TranslateAccelerator(hwndMain, hAccelMain, &msg)) && JAWS_ACCEL
-          !(!hwndConsole && TranslateAccelerator(hwndMain, hAccelNoICS, &msg)) &&
+	  !(!frozen && TranslateAccelerator(hwndMain, hAccelMain, &msg)) &&
 	  !(!hwndConsole && TranslateAccelerator(hwndMain, hAccelNoAlt, &msg))) {
-	int done = 0, i; // [HGM] chat: dispatch cat-box messages
-	for(i=0; i<MAX_CHAT; i++) 
-	    if(chatHandle[i] && IsDialogMessage(chatHandle[i], &msg)) {
-		done = 1; break;
-	}
-	if(done) continue; // [HGM] chat: end patch
 	TranslateMessage(&msg);	/* Translates virtual key codes */
 	DispatchMessage(&msg);	/* Dispatches message to window */
       }
@@ -919,26 +494,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
  * Initialization functions
  *
 \*---------------------------------------------------------------------------*/
-
-void
-SetUserLogo()
-{   // update user logo if necessary
-    static char oldUserName[MSG_SIZ], dir[MSG_SIZ], *curName;
-
-    if(appData.autoLogo) {
-	  curName = UserName();
-	  if(strcmp(curName, oldUserName)) {
-		GetCurrentDirectory(MSG_SIZ, dir);
-		SetCurrentDirectory(installDir);
-		snprintf(oldUserName, MSG_SIZ, "logos\\%s.bmp", curName);
-		userLogo = LoadImage( 0, oldUserName, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE );	
-		safeStrCpy(oldUserName, curName, sizeof(oldUserName)/sizeof(oldUserName[0]) );
-		if(userLogo == NULL)
-		    userLogo = LoadImage( 0, "logos\\dummy.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE );	
-		SetCurrentDirectory(dir); /* return to prev directory */
-	  }
-    }
-}
 
 BOOL
 InitApplication(HINSTANCE hInstance)
@@ -982,72 +537,11 @@ InitApplication(HINSTANCE hInstance)
 int screenHeight, screenWidth;
 
 void
-EnsureOnScreen(int *x, int *y, int minX, int minY)
+EnsureOnScreen(int *x, int *y)
 {
-//  int gap = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYCAPTION);
   /* Be sure window at (x,y) is not off screen (or even mostly off screen) */
   if (*x > screenWidth - 32) *x = 0;
   if (*y > screenHeight - 32) *y = 0;
-  if (*x < minX) *x = minX;
-  if (*y < minY) *y = minY;
-}
-
-VOID
-LoadLogo(ChessProgramState *cps, int n, Boolean ics)
-{
-  char buf[MSG_SIZ], dir[MSG_SIZ];
-  GetCurrentDirectory(MSG_SIZ, dir);
-  SetCurrentDirectory(installDir);
-  if( appData.logo[n] && appData.logo[n][0] != NULLCHAR) {
-      cps->programLogo = LoadImage( 0, appData.logo[n], IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE );
-
-      if (cps->programLogo == NULL && appData.debugMode) {
-          fprintf( debugFP, "Unable to load logo bitmap '%s'\n", appData.logo[n] );
-      }
-  } else if(appData.autoLogo) {
-      if(ics) { // [HGM] logo: in ICS mode second can be used for ICS
-	char *opponent = "";
-	if(gameMode == IcsPlayingWhite) opponent = gameInfo.black;
-	if(gameMode == IcsPlayingBlack) opponent = gameInfo.white;
-	sprintf(buf, "logos\\%s\\%s.bmp", appData.icsHost, opponent);
-	if(!*opponent || !(cps->programLogo = LoadImage( 0, buf, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE ))) {
-	    sprintf(buf, "logos\\%s.bmp", appData.icsHost);
-	    cps->programLogo = LoadImage( 0, buf, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE );
-	}
-      } else
-      if(appData.directory[n] && appData.directory[n][0]) {
-        SetCurrentDirectory(appData.directory[n]);
-	cps->programLogo = LoadImage( 0, "logo.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE );	
-      }
-  }
-  SetCurrentDirectory(dir); /* return to prev directory */
-}
-
-VOID
-InitTextures()
-{
-  ZeroMemory( &backTextureSquareInfo, sizeof(backTextureSquareInfo) );
-  backTextureSquareSize = 0; // kludge to force recalculation of texturemode
-  
-  if( appData.liteBackTextureFile && appData.liteBackTextureFile[0] != NULLCHAR && appData.liteBackTextureFile[0] != '*' ) {
-      if(liteBackTexture) DeleteObject(liteBackTexture);
-      liteBackTexture = LoadImage( 0, appData.liteBackTextureFile, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE );
-      liteBackTextureMode = appData.liteBackTextureMode;
-
-      if (liteBackTexture == NULL && appData.debugMode) {
-          fprintf( debugFP, "Unable to load lite texture bitmap '%s'\n", appData.liteBackTextureFile );
-      }
-  }
-  
-  if( appData.darkBackTextureFile && appData.darkBackTextureFile[0] != NULLCHAR && appData.darkBackTextureFile[0] != '*' ) {
-      if(darkBackTexture) DeleteObject(darkBackTexture);
-      darkBackTexture = LoadImage( 0, appData.darkBackTextureFile, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE );
-      darkBackTextureMode = appData.darkBackTextureMode;
-
-      if (darkBackTexture == NULL && appData.debugMode) {
-          fprintf( debugFP, "Unable to load dark texture bitmap '%s'\n", appData.darkBackTextureFile );
-      }
-  }
 }
 
 BOOL
@@ -1059,39 +553,19 @@ InitInstance(HINSTANCE hInstance, int nCmdShow, LPSTR lpCmdLine)
   char *filepart;
 
   hInst = hInstance;	/* Store instance handle in our global variable */
-  programName = szAppName;
 
   if (SearchPath(NULL, "WinBoard.exe", NULL, MSG_SIZ, installDir, &filepart)) {
     *filepart = NULLCHAR;
-    SetCurrentDirectory(installDir);
   } else {
     GetCurrentDirectory(MSG_SIZ, installDir);
   }
-  gameInfo.boardWidth = gameInfo.boardHeight = 8; // [HGM] won't have open window otherwise
-  screenWidth = screenHeight = 1000; // [HGM] placement: kludge to allow calling EnsureOnScreen from InitAppData
   InitAppData(lpCmdLine);      /* Get run-time parameters */
-  /* xboard, and older WinBoards, controlled the move sound with the
-     appData.ringBellAfterMoves option.  In the current WinBoard, we
-     always turn the option on (so that the backend will call us),
-     then let the user turn the sound off by setting it to silence if
-     desired.  To accommodate old winboard.ini files saved by old
-     versions of WinBoard, we also turn off the sound if the option
-     was initially set to false. [HGM] taken out of InitAppData */
-  if (!appData.ringBellAfterMoves) {
-    sounds[(int)SoundMove].name = strdup("");
-    appData.ringBellAfterMoves = TRUE;
-  }
   if (appData.debugMode) {
-    debugFP = fopen(appData.nameOfDebugFile, "w");
+    debugFP = fopen("winboard.debug", "w");
     setbuf(debugFP, NULL);
   }
 
-  LoadLanguageFile(appData.language);
-
   InitBackEnd1();
-
-//  InitEngineUCI( installDir, &first ); // [HGM] incorporated in InitBackEnd1()
-//  InitEngineUCI( installDir, &second );
 
   /* Create a main window for this application instance. */
   hwnd = CreateWindow(szAppName, szTitle,
@@ -1105,12 +579,6 @@ InitInstance(HINSTANCE hInstance, int nCmdShow, LPSTR lpCmdLine)
     return (FALSE);
   }
 
-  /* [HGM] logo: Load logos if specified (must be done before InitDrawingSizes) */
-  LoadLogo(&first, 0, FALSE);
-  LoadLogo(&second, 1, appData.icsActive);
-
-  SetUserLogo();
-
   iconWhite = LoadIcon(hInstance, "icon_white");
   iconBlack = LoadIcon(hInstance, "icon_black");
   iconCurrent = iconWhite;
@@ -1120,145 +588,497 @@ InitInstance(HINSTANCE hInstance, int nCmdShow, LPSTR lpCmdLine)
   for (ibs = (int) NUM_SIZES - 1; ibs >= 0; ibs--) {
     /* Compute window size for each board size, and use the largest
        size that fits on this screen as the default. */
-    InitDrawingSizes((BoardSize)(ibs+1000), 0);
+    InitDrawingSizes((BoardSize)ibs, 0);
     if (boardSize == (BoardSize)-1 &&
-        winH <= screenHeight
-           - GetSystemMetrics(SM_CYFRAME) - GetSystemMetrics(SM_CYCAPTION) - 10
-        && winW <= screenWidth) {
+	winHeight <= screenHeight && winWidth <= screenWidth) {
       boardSize = (BoardSize)ibs;
     }
   }
-
   InitDrawingSizes(boardSize, 0);
-  RecentEngineMenu(appData.recentEngineList);
   InitMenuChecks();
   buttonCount = GetSystemMetrics(SM_CMOUSEBUTTONS);
 
-  /* [AS] Load textures if specified */
-  InitTextures();
-
-  mysrandom( (unsigned) time(NULL) );
-
-  /* [AS] Restore layout */
-  if( wpMoveHistory.visible ) {
-      MoveHistoryPopUp();
+  /* Make a console window if needed */
+  if (appData.icsActive) {
+    ConsoleCreate();
   }
 
-  if( wpEvalGraph.visible ) {
-      EvalGraphPopUp();
-  }
-
-  if( wpEngineOutput.visible ) {
-      EngineOutputPopUp();
-  }
+  InitBackEnd2();
 
   /* Make the window visible; update its client area; and return "success" */
-  EnsureOnScreen(&wpMain.x, &wpMain.y, minX, minY);
+  EnsureOnScreen(&boardX, &boardY);
   wp.length = sizeof(WINDOWPLACEMENT);
   wp.flags = 0;
   wp.showCmd = nCmdShow;
   wp.ptMaxPosition.x = wp.ptMaxPosition.y = 0;
-  wp.rcNormalPosition.left = wpMain.x;
-  wp.rcNormalPosition.right = wpMain.x + wpMain.width;
-  wp.rcNormalPosition.top = wpMain.y;
-  wp.rcNormalPosition.bottom = wpMain.y + wpMain.height;
+  wp.rcNormalPosition.left = boardX;
+  wp.rcNormalPosition.right = boardX + winWidth;
+  wp.rcNormalPosition.top = boardY;
+  wp.rcNormalPosition.bottom = boardY + winHeight;
   SetWindowPlacement(hwndMain, &wp);
 
-  InitBackEnd2(); // [HGM] moved until after all windows placed, to save correct position if fatal error on engine start
-
-  if(!appData.noGUI) SetWindowPos(hwndMain, alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
-               0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
-
+  SetWindowPos(hwndMain, alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
+	       0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
   if (hwndConsole) {
 #if AOT_CONSOLE
     SetWindowPos(hwndConsole, alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
                  0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE);
 #endif
     ShowWindow(hwndConsole, nCmdShow);
-    SetActiveWindow(hwndConsole);
   }
-  if(!appData.noGUI)   UpdateWindow(hwnd);  else ShowWindow(hwnd, SW_MINIMIZE);
-  if(gameListDialog) SetFocus(gameListDialog); // [HGM] jaws: for if we clicked multi-game game file
+  UpdateWindow(hwnd);
 
   return TRUE;
 
 }
 
-VOID
-InitMenuChecks()
-{
-  HMENU hmenu = GetMenu(hwndMain);
 
-  (void) EnableMenuItem(hmenu, IDM_CommPort,
-			MF_BYCOMMAND|((appData.icsActive &&
-				       *appData.icsCommPort != NULLCHAR) ?
-				      MF_ENABLED : MF_GRAYED));
-  (void) CheckMenuItem(hmenu, IDM_SaveSettingsOnExit,
-		       MF_BYCOMMAND|(saveSettingsOnExit ?
-				     MF_CHECKED : MF_UNCHECKED));
-}
+typedef enum {
+  ArgString, ArgInt, ArgFloat, ArgBoolean, ArgTrue, ArgFalse, ArgNone, 
+  ArgColor, ArgAttribs, ArgFilename, ArgBoardSize, ArgFont, ArgCommSettings,
+  ArgSettingsFilename
+} ArgType;
 
-//---------------------------------------------------------------------------------------------------------
+typedef struct {
+  char *argName;
+  ArgType argType;
+  /***
+  union {
+    String *pString;       // ArgString
+    int *pInt;             // ArgInt
+    float *pFloat;         // ArgFloat
+    Boolean *pBoolean;     // ArgBoolean
+    COLORREF *pColor;      // ArgColor
+    ColorClass cc;         // ArgAttribs
+    String *pFilename;     // ArgFilename
+    BoardSize *pBoardSize; // ArgBoardSize
+    int whichFont;         // ArgFont
+    DCB *pDCB;             // ArgCommSettings
+    String *pFilename;     // ArgSettingsFilename
+  } argLoc;
+  ***/
+  LPVOID argLoc;
+  BOOL save;
+} ArgDescriptor;
 
-#define ICS_TEXT_MENU_SIZE (IDM_CommandXLast - IDM_CommandX + 1)
-#define XBOARD FALSE
-
-#define OPTCHAR "/"
-#define SEPCHAR "="
-#define TOPLEVEL 0
-
-#include "args.h"
-
-// front-end part of option handling
-
-VOID
-LFfromMFP(LOGFONT* lf, MyFontParams *mfp)
-{
-  HDC hdc = CreateDC("DISPLAY", NULL, NULL, NULL);
-  lf->lfHeight = -(int)(mfp->pointSize * GetDeviceCaps(hdc, LOGPIXELSY) / 72.0 + 0.5);
-  DeleteDC(hdc);
-  lf->lfWidth = 0;
-  lf->lfEscapement = 0;
-  lf->lfOrientation = 0;
-  lf->lfWeight = mfp->bold ? FW_BOLD : FW_NORMAL;
-  lf->lfItalic = mfp->italic;
-  lf->lfUnderline = mfp->underline;
-  lf->lfStrikeOut = mfp->strikeout;
-  lf->lfCharSet = mfp->charset;
-  lf->lfOutPrecision = OUT_DEFAULT_PRECIS;
-  lf->lfClipPrecision = CLIP_DEFAULT_PRECIS;
-  lf->lfQuality = DEFAULT_QUALITY;
-  lf->lfPitchAndFamily = DEFAULT_PITCH|FF_DONTCARE;
-    safeStrCpy(lf->lfFaceName, mfp->faceName, sizeof(lf->lfFaceName)/sizeof(lf->lfFaceName[0]) );
-}
-
-void
-CreateFontInMF(MyFont *mf)
-{ 
-  LFfromMFP(&mf->lf, &mf->mfp);
-  if (mf->hf) DeleteObject(mf->hf);
-  mf->hf = CreateFontIndirect(&mf->lf);
-}
-
-// [HGM] This platform-dependent table provides the location for storing the color info
-void *
-colorVariable[] = {
-  &whitePieceColor, 
-  &blackPieceColor, 
-  &lightSquareColor,
-  &darkSquareColor, 
-  &highlightSquareColor,
-  &premoveHighlightColor,
-  NULL,
-  &consoleBackgroundColor,
-  &appData.fontForeColorWhite,
-  &appData.fontBackColorWhite,
-  &appData.fontForeColorBlack,
-  &appData.fontBackColorBlack,
-  &appData.evalHistColorWhite,
-  &appData.evalHistColorBlack,
-  &appData.highlightArrowColor,
+int junk;
+ArgDescriptor argDescriptors[] = {
+  /* positional arguments */
+  { "loadGameFile", ArgFilename, (LPVOID) &appData.loadGameFile, FALSE },
+  { "", ArgNone, NULL },
+  /* keyword arguments */
+  { "whitePieceColor", ArgColor, (LPVOID) &whitePieceColor, TRUE },
+  { "wpc", ArgColor, (LPVOID) &whitePieceColor, FALSE },
+  { "blackPieceColor", ArgColor, (LPVOID) &blackPieceColor, TRUE },
+  { "bpc", ArgColor, (LPVOID) &blackPieceColor, FALSE },
+  { "lightSquareColor", ArgColor, (LPVOID) &lightSquareColor, TRUE },
+  { "lsc", ArgColor, (LPVOID) &lightSquareColor, FALSE },
+  { "darkSquareColor", ArgColor, (LPVOID) &darkSquareColor, TRUE },
+  { "dsc", ArgColor, (LPVOID) &darkSquareColor, FALSE },
+  { "highlightSquareColor", ArgColor, (LPVOID) &highlightSquareColor, TRUE },
+  { "hsc", ArgColor, (LPVOID) &highlightSquareColor, FALSE },
+  { "premoveHighlightColor", ArgColor, (LPVOID) &premoveHighlightColor, TRUE },
+  { "phc", ArgColor, (LPVOID) &premoveHighlightColor, FALSE },
+  { "movesPerSession", ArgInt, (LPVOID) &appData.movesPerSession, TRUE },
+  { "mps", ArgInt, (LPVOID) &appData.movesPerSession, FALSE },
+  { "initString", ArgString, (LPVOID) &appData.initString, FALSE },
+  { "firstInitString", ArgString, (LPVOID) &appData.initString, FALSE },
+  { "secondInitString", ArgString, (LPVOID) &appData.secondInitString, FALSE },
+  { "firstComputerString", ArgString, (LPVOID) &appData.firstComputerString,
+    FALSE },
+  { "secondComputerString", ArgString, (LPVOID) &appData.secondComputerString,
+    FALSE },
+  { "firstChessProgram", ArgFilename, (LPVOID) &appData.firstChessProgram,
+    FALSE },
+  { "fcp", ArgFilename, (LPVOID) &appData.firstChessProgram, FALSE },
+  { "secondChessProgram", ArgFilename, (LPVOID) &appData.secondChessProgram,
+    FALSE },
+  { "scp", ArgFilename, (LPVOID) &appData.secondChessProgram, FALSE },
+  { "firstPlaysBlack", ArgBoolean, (LPVOID) &appData.firstPlaysBlack, FALSE },
+  { "fb", ArgTrue, (LPVOID) &appData.firstPlaysBlack, FALSE },
+  { "xfb", ArgFalse, (LPVOID) &appData.firstPlaysBlack, FALSE },
+  { "-fb", ArgFalse, (LPVOID) &appData.firstPlaysBlack, FALSE },
+  { "noChessProgram", ArgBoolean, (LPVOID) &appData.noChessProgram, FALSE },
+  { "ncp", ArgTrue, (LPVOID) &appData.noChessProgram, FALSE },
+  { "xncp", ArgFalse, (LPVOID) &appData.noChessProgram, FALSE },
+  { "-ncp", ArgFalse, (LPVOID) &appData.noChessProgram, FALSE },
+  { "firstHost", ArgString, (LPVOID) &appData.firstHost, FALSE },
+  { "fh", ArgString, (LPVOID) &appData.firstHost, FALSE },
+  { "secondHost", ArgString, (LPVOID) &appData.secondHost, FALSE },
+  { "sh", ArgString, (LPVOID) &appData.secondHost, FALSE },
+  { "firstDirectory", ArgFilename, (LPVOID) &appData.firstDirectory, FALSE },
+  { "fd", ArgFilename, (LPVOID) &appData.firstDirectory, FALSE },
+  { "secondDirectory", ArgFilename, (LPVOID) &appData.secondDirectory, FALSE },
+  { "sd", ArgFilename, (LPVOID) &appData.secondDirectory, FALSE },
+  /*!!bitmapDirectory?*/
+  { "remoteShell", ArgFilename, (LPVOID) &appData.remoteShell, FALSE },
+  { "rsh", ArgFilename, (LPVOID) &appData.remoteShell, FALSE },
+  { "remoteUser", ArgString, (LPVOID) &appData.remoteUser, FALSE },
+  { "ruser", ArgString, (LPVOID) &appData.remoteUser, FALSE },
+  { "timeDelay", ArgFloat, (LPVOID) &appData.timeDelay, TRUE },
+  { "td", ArgFloat, (LPVOID) &appData.timeDelay, FALSE },
+  { "timeControl", ArgString, (LPVOID) &appData.timeControl, TRUE },
+  { "tc", ArgString, (LPVOID) &appData.timeControl, FALSE },
+  { "timeIncrement", ArgInt, (LPVOID) &appData.timeIncrement, TRUE },
+  { "inc", ArgInt, (LPVOID) &appData.timeIncrement, FALSE },
+  { "internetChessServerMode", ArgBoolean, (LPVOID) &appData.icsActive, FALSE },
+  { "ics", ArgTrue, (LPVOID) &appData.icsActive, FALSE },
+  { "xics", ArgFalse, (LPVOID) &appData.icsActive, FALSE },
+  { "-ics", ArgFalse, (LPVOID) &appData.icsActive, FALSE },
+  { "internetChessServerHost", ArgString, (LPVOID) &appData.icsHost, FALSE },
+  { "icshost", ArgString, (LPVOID) &appData.icsHost, FALSE },
+  { "internetChessServerPort", ArgString, (LPVOID) &appData.icsPort, FALSE },
+  { "icsport", ArgString, (LPVOID) &appData.icsPort, FALSE },
+  { "internetChessServerCommPort", ArgString, (LPVOID) &appData.icsCommPort, FALSE },
+  { "icscomm", ArgString, (LPVOID) &appData.icsCommPort, FALSE },
+  { "internetChessServerComPort", ArgString, (LPVOID) &appData.icsCommPort, FALSE },
+  { "icscom", ArgString, (LPVOID) &appData.icsCommPort, FALSE },
+  { "internetChessServerLogonScript", ArgFilename, (LPVOID) &appData.icsLogon, FALSE },
+  { "icslogon", ArgFilename, (LPVOID) &appData.icsLogon, FALSE },
+  { "useTelnet", ArgBoolean, (LPVOID) &appData.useTelnet, FALSE },
+  { "telnet", ArgTrue, (LPVOID) &appData.useTelnet, FALSE },
+  { "xtelnet", ArgFalse, (LPVOID) &appData.useTelnet, FALSE },
+  { "-telnet", ArgFalse, (LPVOID) &appData.useTelnet, FALSE },
+  { "telnetProgram", ArgFilename, (LPVOID) &appData.telnetProgram, FALSE },
+  { "icshelper", ArgFilename, (LPVOID) &appData.icsHelper, FALSE },
+  { "gateway", ArgString, (LPVOID) &appData.gateway, FALSE },
+  { "loadGameFile", ArgFilename, (LPVOID) &appData.loadGameFile, FALSE },
+  { "lgf", ArgFilename, (LPVOID) &appData.loadGameFile, FALSE },
+  { "loadGameIndex", ArgInt, (LPVOID) &appData.loadGameIndex, FALSE },
+  { "lgi", ArgInt, (LPVOID) &appData.loadGameIndex, FALSE },
+  { "saveGameFile", ArgFilename, (LPVOID) &appData.saveGameFile, TRUE },
+  { "sgf", ArgFilename, (LPVOID) &appData.saveGameFile, FALSE },
+  { "autoSaveGames", ArgBoolean, (LPVOID) &appData.autoSaveGames, TRUE },
+  { "autosave", ArgTrue, (LPVOID) &appData.autoSaveGames, FALSE },
+  { "xautosave", ArgFalse, (LPVOID) &appData.autoSaveGames, FALSE },
+  { "-autosave", ArgFalse, (LPVOID) &appData.autoSaveGames, FALSE },
+  { "loadPositionFile", ArgFilename, (LPVOID) &appData.loadPositionFile, FALSE },
+  { "lpf", ArgFilename, (LPVOID) &appData.loadPositionFile, FALSE },
+  { "loadPositionIndex", ArgInt, (LPVOID) &appData.loadPositionIndex, FALSE },
+  { "lpi", ArgInt, (LPVOID) &appData.loadPositionIndex, FALSE },
+  { "savePositionFile", ArgFilename, (LPVOID) &appData.savePositionFile, FALSE },
+  { "spf", ArgFilename, (LPVOID) &appData.savePositionFile, FALSE },
+  { "matchMode", ArgBoolean, (LPVOID) &appData.matchMode, FALSE },
+  { "mm", ArgTrue, (LPVOID) &appData.matchMode, FALSE },
+  { "xmm", ArgFalse, (LPVOID) &appData.matchMode, FALSE },
+  { "-mm", ArgFalse, (LPVOID) &appData.matchMode, FALSE },
+  { "matchGames", ArgInt, (LPVOID) &appData.matchGames, FALSE },
+  { "mg", ArgInt, (LPVOID) &appData.matchGames, FALSE },
+  { "monoMode", ArgBoolean, (LPVOID) &appData.monoMode, TRUE },
+  { "mono", ArgTrue, (LPVOID) &appData.monoMode, FALSE },
+  { "xmono", ArgFalse, (LPVOID) &appData.monoMode, FALSE },
+  { "-mono", ArgFalse, (LPVOID) &appData.monoMode, FALSE },
+  { "debugMode", ArgBoolean, (LPVOID) &appData.debugMode, FALSE },
+  { "debug", ArgTrue, (LPVOID) &appData.debugMode, FALSE },
+  { "xdebug", ArgFalse, (LPVOID) &appData.debugMode, FALSE },
+  { "-debug", ArgFalse, (LPVOID) &appData.debugMode, FALSE },
+  { "clockMode", ArgBoolean, (LPVOID) &appData.clockMode, FALSE },
+  { "clock", ArgTrue, (LPVOID) &appData.clockMode, FALSE },
+  { "xclock", ArgFalse, (LPVOID) &appData.clockMode, FALSE },
+  { "-clock", ArgFalse, (LPVOID) &appData.clockMode, FALSE },
+  { "searchTime", ArgString, (LPVOID) &appData.searchTime, FALSE },
+  { "st", ArgString, (LPVOID) &appData.searchTime, FALSE },
+  { "searchDepth", ArgInt, (LPVOID) &appData.searchDepth, FALSE },
+  { "depth", ArgInt, (LPVOID) &appData.searchDepth, FALSE },
+  { "showCoords", ArgBoolean, (LPVOID) &appData.showCoords, TRUE },
+  { "showInfluence", ArgBoolean, (LPVOID) &appData.showInfluence, TRUE },
+  { "coords", ArgTrue, (LPVOID) &appData.showCoords, FALSE },
+  { "xcoords", ArgFalse, (LPVOID) &appData.showCoords, FALSE },
+  { "-coords", ArgFalse, (LPVOID) &appData.showCoords, FALSE },
+  { "showThinking", ArgBoolean, (LPVOID) &appData.showThinking, TRUE },
+  { "thinking", ArgTrue, (LPVOID) &appData.showThinking, FALSE },
+  { "xthinking", ArgFalse, (LPVOID) &appData.showThinking, FALSE },
+  { "-thinking", ArgFalse, (LPVOID) &appData.showThinking, FALSE },
+  { "ponderNextMove", ArgBoolean, (LPVOID) &appData.ponderNextMove, TRUE },
+  { "ponder", ArgTrue, (LPVOID) &appData.ponderNextMove, FALSE },
+  { "xponder", ArgFalse, (LPVOID) &appData.ponderNextMove, FALSE },
+  { "-ponder", ArgFalse, (LPVOID) &appData.ponderNextMove, FALSE },
+  { "periodicUpdates", ArgBoolean, (LPVOID) &appData.periodicUpdates, TRUE },
+  { "periodic", ArgTrue, (LPVOID) &appData.periodicUpdates, FALSE },
+  { "xperiodic", ArgFalse, (LPVOID) &appData.periodicUpdates, FALSE },
+  { "-periodic", ArgFalse, (LPVOID) &appData.periodicUpdates, FALSE },
+  { "popupExitMessage", ArgBoolean, (LPVOID) &appData.popupExitMessage, TRUE },
+  { "exit", ArgTrue, (LPVOID) &appData.popupExitMessage, FALSE },
+  { "xexit", ArgFalse, (LPVOID) &appData.popupExitMessage, FALSE },
+  { "-exit", ArgFalse, (LPVOID) &appData.popupExitMessage, FALSE },
+  { "popupMoveErrors", ArgBoolean, (LPVOID) &appData.popupMoveErrors, TRUE },
+  { "popup", ArgTrue, (LPVOID) &appData.popupMoveErrors, FALSE },
+  { "xpopup", ArgFalse, (LPVOID) &appData.popupMoveErrors, FALSE },
+  { "-popup", ArgFalse, (LPVOID) &appData.popupMoveErrors, FALSE },
+  { "popUpErrors", ArgBoolean, (LPVOID) &appData.popupMoveErrors, 
+    FALSE }, /* only so that old WinBoard.ini files from betas can be read */
+  { "clockFont", ArgFont, (LPVOID) CLOCK_FONT, TRUE },
+  { "messageFont", ArgFont, (LPVOID) MESSAGE_FONT, TRUE },
+  { "coordFont", ArgFont, (LPVOID) COORD_FONT, TRUE },
+  { "tagsFont", ArgFont, (LPVOID) EDITTAGS_FONT, TRUE },
+  { "commentFont", ArgFont, (LPVOID) COMMENT_FONT, TRUE },
+  { "icsFont", ArgFont, (LPVOID) CONSOLE_FONT, TRUE },
+  { "boardSize", ArgBoardSize, (LPVOID) &boardSize,
+    TRUE }, /* must come after all fonts */
+  { "size", ArgBoardSize, (LPVOID) &boardSize, FALSE },
+  { "ringBellAfterMoves", ArgBoolean, (LPVOID) &appData.ringBellAfterMoves,
+    FALSE }, /* historical; kept only so old winboard.ini files will parse */
+  { "alwaysOnTop", ArgBoolean, (LPVOID) &alwaysOnTop, TRUE },
+  { "top", ArgTrue, (LPVOID) &alwaysOnTop, FALSE },
+  { "xtop", ArgFalse, (LPVOID) &alwaysOnTop, FALSE },
+  { "-top", ArgFalse, (LPVOID) &alwaysOnTop, FALSE },
+  { "autoCallFlag", ArgBoolean, (LPVOID) &appData.autoCallFlag, TRUE },
+  { "autoflag", ArgTrue, (LPVOID) &appData.autoCallFlag, FALSE },
+  { "xautoflag", ArgFalse, (LPVOID) &appData.autoCallFlag, FALSE },
+  { "-autoflag", ArgFalse, (LPVOID) &appData.autoCallFlag, FALSE },
+  { "autoComment", ArgBoolean, (LPVOID) &appData.autoComment, TRUE },
+  { "autocomm", ArgTrue, (LPVOID) &appData.autoComment, FALSE },
+  { "xautocomm", ArgFalse, (LPVOID) &appData.autoComment, FALSE },
+  { "-autocomm", ArgFalse, (LPVOID) &appData.autoComment, FALSE },
+  { "autoObserve", ArgBoolean, (LPVOID) &appData.autoObserve, TRUE },
+  { "autobs", ArgTrue, (LPVOID) &appData.autoObserve, FALSE },
+  { "xautobs", ArgFalse, (LPVOID) &appData.autoObserve, FALSE },
+  { "-autobs", ArgFalse, (LPVOID) &appData.autoObserve, FALSE },
+  { "flipView", ArgBoolean, (LPVOID) &appData.flipView, FALSE },
+  { "flip", ArgTrue, (LPVOID) &appData.flipView, FALSE },
+  { "xflip", ArgFalse, (LPVOID) &appData.flipView, FALSE },
+  { "-flip", ArgFalse, (LPVOID) &appData.flipView, FALSE },
+  { "autoFlipView", ArgBoolean, (LPVOID) &appData.autoFlipView, TRUE },
+  { "autoflip", ArgTrue, (LPVOID) &appData.autoFlipView, FALSE },
+  { "xautoflip", ArgFalse, (LPVOID) &appData.autoFlipView, FALSE },
+  { "-autoflip", ArgFalse, (LPVOID) &appData.autoFlipView, FALSE },
+  { "autoRaiseBoard", ArgBoolean, (LPVOID) &appData.autoRaiseBoard, TRUE },
+  { "autoraise", ArgTrue, (LPVOID) &appData.autoRaiseBoard, FALSE },
+  { "xautoraise", ArgFalse, (LPVOID) &appData.autoRaiseBoard, FALSE },
+  { "-autoraise", ArgFalse, (LPVOID) &appData.autoRaiseBoard, FALSE },
+#if 0
+  { "cmailGameName", ArgString, (LPVOID) &appData.cmailGameName, FALSE },
+  { "cmail", ArgString, (LPVOID) &appData.cmailGameName, FALSE },
+#endif
+  { "alwaysPromoteToQueen", ArgBoolean, (LPVOID) &appData.alwaysPromoteToQueen, TRUE },
+  { "queen", ArgTrue, (LPVOID) &appData.alwaysPromoteToQueen, FALSE },
+  { "xqueen", ArgFalse, (LPVOID) &appData.alwaysPromoteToQueen, FALSE },
+  { "-queen", ArgFalse, (LPVOID) &appData.alwaysPromoteToQueen, FALSE },
+  { "oldSaveStyle", ArgBoolean, (LPVOID) &appData.oldSaveStyle, TRUE },
+  { "oldsave", ArgTrue, (LPVOID) &appData.oldSaveStyle, FALSE },
+  { "xoldsave", ArgFalse, (LPVOID) &appData.oldSaveStyle, FALSE },
+  { "-oldsave", ArgFalse, (LPVOID) &appData.oldSaveStyle, FALSE },
+  { "quietPlay", ArgBoolean, (LPVOID) &appData.quietPlay, TRUE },
+  { "quiet", ArgTrue, (LPVOID) &appData.quietPlay, FALSE },
+  { "xquiet", ArgFalse, (LPVOID) &appData.quietPlay, FALSE },
+  { "-quiet", ArgFalse, (LPVOID) &appData.quietPlay, FALSE },
+  { "getMoveList", ArgBoolean, (LPVOID) &appData.getMoveList, TRUE },
+  { "moves", ArgTrue, (LPVOID) &appData.getMoveList, FALSE },
+  { "xmoves", ArgFalse, (LPVOID) &appData.getMoveList, FALSE },
+  { "-moves", ArgFalse, (LPVOID) &appData.getMoveList, FALSE },
+  { "testLegality", ArgBoolean, (LPVOID) &appData.testLegality, TRUE },
+  { "legal", ArgTrue, (LPVOID) &appData.testLegality, FALSE },
+  { "xlegal", ArgFalse, (LPVOID) &appData.testLegality, FALSE },
+  { "-legal", ArgFalse, (LPVOID) &appData.testLegality, FALSE },
+  { "premove", ArgBoolean, (LPVOID) &appData.premove, TRUE },
+  { "pre", ArgTrue, (LPVOID) &appData.premove, FALSE },
+  { "xpre", ArgFalse, (LPVOID) &appData.premove, FALSE },
+  { "-pre", ArgFalse, (LPVOID) &appData.premove, FALSE },
+  { "premoveWhite", ArgBoolean, (LPVOID) &appData.premoveWhite, TRUE },
+  { "prewhite", ArgTrue, (LPVOID) &appData.premoveWhite, FALSE },
+  { "xprewhite", ArgFalse, (LPVOID) &appData.premoveWhite, FALSE },
+  { "-prewhite", ArgFalse, (LPVOID) &appData.premoveWhite, FALSE },
+  { "premoveWhiteText", ArgString, (LPVOID) &appData.premoveWhiteText, TRUE },
+  { "premoveBlack", ArgBoolean, (LPVOID) &appData.premoveBlack, TRUE },
+  { "preblack", ArgTrue, (LPVOID) &appData.premoveBlack, FALSE },
+  { "xpreblack", ArgFalse, (LPVOID) &appData.premoveBlack, FALSE },
+  { "-preblack", ArgFalse, (LPVOID) &appData.premoveBlack, FALSE },
+  { "premoveBlackText", ArgString, (LPVOID) &appData.premoveBlackText, TRUE },
+  { "icsAlarm", ArgBoolean, (LPVOID) &appData.icsAlarm, TRUE},
+  { "alarm", ArgTrue, (LPVOID) &appData.icsAlarm, FALSE},
+  { "xalarm", ArgFalse, (LPVOID) &appData.icsAlarm, FALSE},
+  { "-alarm", ArgFalse, (LPVOID) &appData.icsAlarm, FALSE},
+  { "icsAlarmTime", ArgInt, (LPVOID) &appData.icsAlarmTime, TRUE},
+  { "localLineEditing", ArgBoolean, (LPVOID) &appData.localLineEditing, FALSE},
+  { "localLineEditing", ArgBoolean, (LPVOID) &appData.localLineEditing, FALSE},
+  { "edit", ArgTrue, (LPVOID) &appData.localLineEditing, FALSE },
+  { "xedit", ArgFalse, (LPVOID) &appData.localLineEditing, FALSE },
+  { "-edit", ArgFalse, (LPVOID) &appData.localLineEditing, FALSE },
+  { "animateMoving", ArgBoolean, (LPVOID) &appData.animate, TRUE },
+  { "animate", ArgTrue, (LPVOID) &appData.animate, FALSE },
+  { "xanimate", ArgFalse, (LPVOID) &appData.animate, FALSE },
+  { "-animate", ArgFalse, (LPVOID) &appData.animate, FALSE },
+  { "animateSpeed", ArgInt, (LPVOID) &appData.animSpeed, TRUE },
+  { "animateDragging", ArgBoolean, (LPVOID) &appData.animateDragging, TRUE },
+  { "drag", ArgTrue, (LPVOID) &appData.animateDragging, FALSE },
+  { "xdrag", ArgFalse, (LPVOID) &appData.animateDragging, FALSE },
+  { "-drag", ArgFalse, (LPVOID) &appData.animateDragging, FALSE },
+  { "blindfold", ArgBoolean, (LPVOID) &appData.blindfold, TRUE },
+  { "blind", ArgTrue, (LPVOID) &appData.blindfold, FALSE },
+  { "xblind", ArgFalse, (LPVOID) &appData.blindfold, FALSE },
+  { "-blind", ArgFalse, (LPVOID) &appData.blindfold, FALSE },
+  { "highlightLastMove", ArgBoolean,
+    (LPVOID) &appData.highlightLastMove, TRUE },
+  { "highlight", ArgTrue, (LPVOID) &appData.highlightLastMove, FALSE },
+  { "xhighlight", ArgFalse, (LPVOID) &appData.highlightLastMove, FALSE },
+  { "-highlight", ArgFalse, (LPVOID) &appData.highlightLastMove, FALSE },
+  { "highlightDragging", ArgBoolean,
+    (LPVOID) &appData.highlightDragging, TRUE },
+  { "highdrag", ArgTrue, (LPVOID) &appData.highlightDragging, FALSE },
+  { "xhighdrag", ArgFalse, (LPVOID) &appData.highlightDragging, FALSE },
+  { "-highdrag", ArgFalse, (LPVOID) &appData.highlightDragging, FALSE },
+  { "colorizeMessages", ArgBoolean, (LPVOID) &appData.colorize, TRUE },
+  { "colorize", ArgTrue, (LPVOID) &appData.colorize, FALSE },
+  { "xcolorize", ArgFalse, (LPVOID) &appData.colorize, FALSE },
+  { "-colorize", ArgFalse, (LPVOID) &appData.colorize, FALSE },
+  { "colorShout", ArgAttribs, (LPVOID) ColorShout, TRUE },
+  { "colorSShout", ArgAttribs, (LPVOID) ColorSShout, TRUE },
+  { "colorChannel1", ArgAttribs, (LPVOID) ColorChannel1, TRUE },
+  { "colorChannel", ArgAttribs, (LPVOID) ColorChannel, TRUE },
+  { "colorKibitz", ArgAttribs, (LPVOID) ColorKibitz, TRUE },
+  { "colorTell", ArgAttribs, (LPVOID) ColorTell, TRUE },
+  { "colorChallenge", ArgAttribs, (LPVOID) ColorChallenge, TRUE },
+  { "colorRequest", ArgAttribs, (LPVOID) ColorRequest, TRUE },
+  { "colorSeek", ArgAttribs, (LPVOID) ColorSeek, TRUE },
+  { "colorNormal", ArgAttribs, (LPVOID) ColorNormal, TRUE },
+  { "colorBackground", ArgColor, (LPVOID) &consoleBackgroundColor, TRUE },
+  { "soundShout", ArgFilename,
+    (LPVOID) &textAttribs[ColorShout].sound.name, TRUE },
+  { "soundSShout", ArgFilename,
+    (LPVOID) &textAttribs[ColorSShout].sound.name, TRUE },
+  { "soundChannel1", ArgFilename,
+    (LPVOID) &textAttribs[ColorChannel1].sound.name, TRUE },
+  { "soundChannel", ArgFilename,
+    (LPVOID) &textAttribs[ColorChannel].sound.name, TRUE },
+  { "soundKibitz", ArgFilename,
+    (LPVOID) &textAttribs[ColorKibitz].sound.name, TRUE },
+  { "soundTell", ArgFilename,
+    (LPVOID) &textAttribs[ColorTell].sound.name, TRUE },
+  { "soundChallenge", ArgFilename,
+    (LPVOID) &textAttribs[ColorChallenge].sound.name, TRUE },
+  { "soundRequest", ArgFilename,
+    (LPVOID) &textAttribs[ColorRequest].sound.name, TRUE },
+  { "soundSeek", ArgFilename,
+    (LPVOID) &textAttribs[ColorSeek].sound.name, TRUE },
+  { "soundMove", ArgFilename, (LPVOID) &sounds[(int)SoundMove].name, TRUE },
+  { "soundBell", ArgFilename, (LPVOID) &sounds[(int)SoundBell].name, TRUE },
+  { "soundIcsWin", ArgFilename, (LPVOID) &sounds[(int)SoundIcsWin].name,TRUE },
+  { "soundIcsLoss", ArgFilename, 
+    (LPVOID) &sounds[(int)SoundIcsLoss].name, TRUE },
+  { "soundIcsDraw", ArgFilename, 
+    (LPVOID) &sounds[(int)SoundIcsDraw].name, TRUE },
+  { "soundIcsUnfinished", ArgFilename, 
+    (LPVOID) &sounds[(int)SoundIcsUnfinished].name, TRUE},
+  { "soundIcsAlarm", ArgFilename, 
+    (LPVOID) &sounds[(int)SoundAlarm].name, TRUE },
+  { "reuseFirst", ArgBoolean, (LPVOID) &appData.reuseFirst, FALSE },
+  { "reuse", ArgTrue, (LPVOID) &appData.reuseFirst, FALSE },
+  { "xreuse", ArgFalse, (LPVOID) &appData.reuseFirst, FALSE },
+  { "-reuse", ArgFalse, (LPVOID) &appData.reuseFirst, FALSE },
+  { "reuseChessPrograms", ArgBoolean,
+    (LPVOID) &appData.reuseFirst, FALSE }, /* backward compat only */
+  { "reuseSecond", ArgBoolean, (LPVOID) &appData.reuseSecond, FALSE },
+  { "reuse2", ArgTrue, (LPVOID) &appData.reuseSecond, FALSE },
+  { "xreuse2", ArgFalse, (LPVOID) &appData.reuseSecond, FALSE },
+  { "-reuse2", ArgFalse, (LPVOID) &appData.reuseSecond, FALSE },
+  { "comPortSettings", ArgCommSettings, (LPVOID) &dcb, TRUE },
+  { "x", ArgInt, (LPVOID) &boardX, TRUE },
+  { "y", ArgInt, (LPVOID) &boardY, TRUE },
+  { "icsX", ArgInt, (LPVOID) &consoleX, TRUE },
+  { "icsY", ArgInt, (LPVOID) &consoleY, TRUE },
+  { "icsW", ArgInt, (LPVOID) &consoleW, TRUE },
+  { "icsH", ArgInt, (LPVOID) &consoleH, TRUE },
+  { "analysisX", ArgInt, (LPVOID) &analysisX, TRUE },
+  { "analysisY", ArgInt, (LPVOID) &analysisY, TRUE },
+  { "analysisW", ArgInt, (LPVOID) &analysisW, TRUE },
+  { "analysisH", ArgInt, (LPVOID) &analysisH, TRUE },
+  { "commentX", ArgInt, (LPVOID) &commentX, TRUE },
+  { "commentY", ArgInt, (LPVOID) &commentY, TRUE },
+  { "commentW", ArgInt, (LPVOID) &commentW, TRUE },
+  { "commentH", ArgInt, (LPVOID) &commentH, TRUE },
+  { "tagsX", ArgInt, (LPVOID) &editTagsX, TRUE },
+  { "tagsY", ArgInt, (LPVOID) &editTagsY, TRUE },
+  { "tagsW", ArgInt, (LPVOID) &editTagsW, TRUE },
+  { "tagsH", ArgInt, (LPVOID) &editTagsH, TRUE },
+  { "gameListX", ArgInt, (LPVOID) &gameListX, TRUE },
+  { "gameListY", ArgInt, (LPVOID) &gameListY, TRUE },
+  { "gameListW", ArgInt, (LPVOID) &gameListW, TRUE },
+  { "gameListH", ArgInt, (LPVOID) &gameListH, TRUE },
+  { "settingsFile", ArgSettingsFilename, (LPVOID) &settingsFileName, FALSE },
+  { "ini", ArgSettingsFilename, (LPVOID) &settingsFileName, FALSE },
+  { "saveSettingsOnExit", ArgBoolean, (LPVOID) &saveSettingsOnExit, TRUE },
+  { "chessProgram", ArgBoolean, (LPVOID) &chessProgram, FALSE },
+  { "cp", ArgTrue, (LPVOID) &chessProgram, FALSE },
+  { "xcp", ArgFalse, (LPVOID) &chessProgram, FALSE },
+  { "-cp", ArgFalse, (LPVOID) &chessProgram, FALSE },
+  { "icsMenu", ArgString, (LPVOID) &icsTextMenuString, TRUE },
+  { "icsNames", ArgString, (LPVOID) &icsNames, TRUE },
+  { "firstChessProgramNames", ArgString, (LPVOID) &firstChessProgramNames,
+    TRUE },
+  { "secondChessProgramNames", ArgString, (LPVOID) &secondChessProgramNames,
+    TRUE },
+  { "initialMode", ArgString, (LPVOID) &appData.initialMode, FALSE },
+  { "mode", ArgString, (LPVOID) &appData.initialMode, FALSE },
+  { "variant", ArgString, (LPVOID) &appData.variant, FALSE },
+  { "firstProtocolVersion", ArgInt, (LPVOID) &appData.firstProtocolVersion,
+    FALSE },
+  { "secondProtocolVersion", ArgInt, (LPVOID) &appData.secondProtocolVersion,
+    FALSE },
+  { "showButtonBar", ArgBoolean, (LPVOID) &appData.showButtonBar, TRUE },
+  { "buttons", ArgTrue, (LPVOID) &appData.showButtonBar, FALSE },
+  { "xbuttons", ArgFalse, (LPVOID) &appData.showButtonBar, FALSE },
+  { "-buttons", ArgFalse, (LPVOID) &appData.showButtonBar, FALSE },
+#ifdef ZIPPY
+  { "zippyTalk", ArgBoolean, (LPVOID) &appData.zippyTalk, FALSE },
+  { "zt", ArgTrue, (LPVOID) &appData.zippyTalk, FALSE },
+  { "xzt", ArgFalse, (LPVOID) &appData.zippyTalk, FALSE },
+  { "-zt", ArgFalse, (LPVOID) &appData.zippyTalk, FALSE },
+  { "zippyPlay", ArgBoolean, (LPVOID) &appData.zippyPlay, FALSE },
+  { "zp", ArgTrue, (LPVOID) &appData.zippyPlay, FALSE },
+  { "xzp", ArgFalse, (LPVOID) &appData.zippyPlay, FALSE },
+  { "-zp", ArgFalse, (LPVOID) &appData.zippyPlay, FALSE },
+  { "zippyLines", ArgFilename, (LPVOID) &appData.zippyLines, FALSE },
+  { "zippyPinhead", ArgString, (LPVOID) &appData.zippyPinhead, FALSE },
+  { "zippyPassword", ArgString, (LPVOID) &appData.zippyPassword, FALSE },
+  { "zippyPassword2", ArgString, (LPVOID) &appData.zippyPassword2, FALSE },
+  { "zippyWrongPassword", ArgString, (LPVOID) &appData.zippyWrongPassword,
+    FALSE },
+  { "zippyAcceptOnly", ArgString, (LPVOID) &appData.zippyAcceptOnly, FALSE },
+  { "zippyUseI", ArgBoolean, (LPVOID) &appData.zippyUseI, FALSE },
+  { "zui", ArgTrue, (LPVOID) &appData.zippyUseI, FALSE },
+  { "xzui", ArgFalse, (LPVOID) &appData.zippyUseI, FALSE },
+  { "-zui", ArgFalse, (LPVOID) &appData.zippyUseI, FALSE },
+  { "zippyBughouse", ArgInt, (LPVOID) &appData.zippyBughouse, FALSE },
+  { "zippyNoplayCrafty", ArgBoolean, (LPVOID) &appData.zippyNoplayCrafty,
+    FALSE },
+  { "znc", ArgTrue, (LPVOID) &appData.zippyNoplayCrafty, FALSE },
+  { "xznc", ArgFalse, (LPVOID) &appData.zippyNoplayCrafty, FALSE },
+  { "-znc", ArgFalse, (LPVOID) &appData.zippyNoplayCrafty, FALSE },
+  { "zippyGameEnd", ArgString, (LPVOID) &appData.zippyGameEnd, FALSE },
+  { "zippyGameStart", ArgString, (LPVOID) &appData.zippyGameStart, FALSE },
+  { "zippyAdjourn", ArgBoolean, (LPVOID) &appData.zippyAdjourn, FALSE },
+  { "zadj", ArgTrue, (LPVOID) &appData.zippyAdjourn, FALSE },
+  { "xzadj", ArgFalse, (LPVOID) &appData.zippyAdjourn, FALSE },
+  { "-zadj", ArgFalse, (LPVOID) &appData.zippyAdjourn, FALSE },
+  { "zippyAbort", ArgBoolean, (LPVOID) &appData.zippyAbort, FALSE },
+  { "zab", ArgTrue, (LPVOID) &appData.zippyAbort, FALSE },
+  { "xzab", ArgFalse, (LPVOID) &appData.zippyAbort, FALSE },
+  { "-zab", ArgFalse, (LPVOID) &appData.zippyAbort, FALSE },
+  { "zippyVariants", ArgString, (LPVOID) &appData.zippyVariants, FALSE },
+  { "zippyMaxGames", ArgInt, (LPVOID)&appData.zippyMaxGames, FALSE },
+  { "zippyReplayTimeout", ArgInt, (LPVOID)&appData.zippyReplayTimeout, FALSE },
+  /* Kludge to allow winboard.ini files from buggy 4.0.4 to be read: */
+  { "zippyReplyTimeout", ArgInt, (LPVOID)&junk, FALSE },
+#endif
+  { NULL, ArgNone, NULL, FALSE }
 };
+
+
+/* Kludge for indirection files on command line */
+char* lastIndirectionFilename;
+ArgDescriptor argDescriptorIndirection =
+{ "", ArgSettingsFilename, (LPVOID) NULL, FALSE };
+
+
+VOID
+ExitArgError(char *msg, char *badArg)
+{
+  char buf[MSG_SIZ];
+
+  sprintf(buf, "%s %s", msg, badArg);
+  DisplayFatalError(buf, 0, 2);
+  exit(2);
+}
 
 /* Command line font name parser.  NULL name means do nothing.
    Syntax like "Courier New:10.0 bi" or "Arial:10" or "Arial:10b"
@@ -1274,63 +1094,28 @@ ParseFontName(char *name, MyFontParams *mfp)
   q = strchr(p, ':');
   if (q) {
     if (q - p >= sizeof(mfp->faceName))
-      ExitArgError(_("Font name too long:"), name, TRUE);
+      ExitArgError("Font name too long:", name);
     memcpy(mfp->faceName, p, q - p);
     mfp->faceName[q - p] = NULLCHAR;
     p = q + 1;
   } else {
     q = mfp->faceName;
-
     while (*p && !isdigit(*p)) {
       *q++ = *p++;
       if (q - mfp->faceName >= sizeof(mfp->faceName))
-	ExitArgError(_("Font name too long:"), name, TRUE);
+	ExitArgError("Font name too long:", name);
     }
     while (q > mfp->faceName && q[-1] == ' ') q--;
     *q = NULLCHAR;
   }
-  if (!*p) ExitArgError(_("Font point size missing:"), name, TRUE);
+  if (!*p) ExitArgError("Font point size missing:", name);
   mfp->pointSize = (float) atof(p);
   mfp->bold = (strchr(p, 'b') != NULL);
   mfp->italic = (strchr(p, 'i') != NULL);
   mfp->underline = (strchr(p, 'u') != NULL);
   mfp->strikeout = (strchr(p, 's') != NULL);
-  mfp->charset = DEFAULT_CHARSET;
-  q = strchr(p, 'c');
-  if (q)
-    mfp->charset = (BYTE) atoi(q+1);
 }
 
-void
-ParseFont(char *name, int number)
-{ // wrapper to shield back-end from 'font'
-  ParseFontName(name, &font[boardSize][number]->mfp);
-}
-
-void
-SetFontDefaults()
-{ // in WB  we have a 2D array of fonts; this initializes their description
-  int i, j;
-  /* Point font array elements to structures and
-     parse default font names */
-  for (i=0; i<NUM_FONTS; i++) {
-    for (j=0; j<NUM_SIZES; j++) {
-      font[j][i] = &fontRec[j][i];
-      ParseFontName(font[j][i]->def, &font[j][i]->mfp);
-    }
-  }
-}
-
-void
-CreateFonts()
-{ // here we create the actual fonts from the selected descriptions
-  int i, j;
-  for (i=0; i<NUM_FONTS; i++) {
-    for (j=0; j<NUM_SIZES; j++) {
-      CreateFontInMF(font[j][i]);
-    }
-  }
-}
 /* Color name parser.
    X version accepts X color names, but this one
    handles only the #rrggbb form (hex) or rrr,ggg,bbb (decimal) */
@@ -1346,21 +1131,15 @@ ParseColorName(char *name)
       &red, &green, &blue);
   }
   if (count != 3) {
-    snprintf(buf, MSG_SIZ, _("Can't parse color name %s"), name);
+    sprintf(buf, "Can't parse color name %s", name);
     DisplayError(buf, 0);
     return RGB(0, 0, 0);
   }
   return PALETTERGB(red, green, blue);
 }
 
-void
-ParseColor(int n, char *name)
-{ // for WinBoard the color is an int, which needs to be derived from the string
-  if(colorVariable[n]) *(int*)colorVariable[n] = ParseColorName(name);
-}
 
-void
-ParseAttribs(COLORREF *color, int *effects, char* argValue)
+void ParseAttribs(COLORREF *color, int *effects, char* argValue)
 {
   char *e = argValue;
   int eff = 0;
@@ -1377,52 +1156,472 @@ ParseAttribs(COLORREF *color, int *effects, char* argValue)
   *color   = ParseColorName(e);
 }
 
-void
-ParseTextAttribs(ColorClass cc, char *s)
-{   // [HGM] front-end wrapper that does the platform-dependent call
-    // for XBoard we would set (&appData.colorShout)[cc] = strdup(s);
-    ParseAttribs(&textAttribs[cc].color, &textAttribs[cc].effects, s);
-}
 
-void
-ParseBoardSize(void *addr, char *name)
-{ // [HGM] rewritten with return-value ptr to shield back-end from BoardSize
+BoardSize
+ParseBoardSize(char *name)
+{
   BoardSize bs = SizeTiny;
   while (sizeInfo[bs].name != NULL) {
-    if (StrCaseCmp(name, sizeInfo[bs].name) == 0) {
-	*(BoardSize *)addr = bs;
-	return;
-    }
+    if (StrCaseCmp(name, sizeInfo[bs].name) == 0) return bs;
     bs++;
   }
-  ExitArgError(_("Unrecognized board size value"), name, TRUE);
+  ExitArgError("Unrecognized board size value", name);
+  return bs; /* not reached */
 }
 
-void
-LoadAllSounds()
-{ // [HGM] import name from appData first
+
+char
+StringGet(void *getClosure)
+{
+  char **p = (char **) getClosure;
+  return *((*p)++);
+}
+
+char
+FileGet(void *getClosure)
+{
+  int c;
+  FILE* f = (FILE*) getClosure;
+
+  c = getc(f);
+  if (c == EOF)
+    return NULLCHAR;
+  else
+    return (char) c;
+}
+
+/* Parse settings file named "name". If file found, return the
+   full name in fullname and return TRUE; else return FALSE */
+BOOLEAN
+ParseSettingsFile(char *name, char fullname[MSG_SIZ])
+{
+  char *dummy;
+  FILE *f;
+
+  if (SearchPath(installDir, name, NULL, MSG_SIZ, fullname, &dummy)) {
+    f = fopen(fullname, "r");
+    if (f != NULL) {
+      ParseArgs(FileGet, f);
+      fclose(f);
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+VOID
+ParseArgs(GetFunc get, void *cl)
+{
+  char argName[ARG_MAX];
+  char argValue[ARG_MAX];
+  ArgDescriptor *ad;
+  char start;
+  char *q;
+  int i, octval;
+  char ch;
+  int posarg = 0;
+
+  ch = get(cl);
+  for (;;) {
+    while (ch == ' ' || ch == '\n' || ch == '\t') ch = get(cl);
+    if (ch == NULLCHAR) break;
+    if (ch == ';') {
+      /* Comment to end of line */
+      ch = get(cl);
+      while (ch != '\n' && ch != NULLCHAR) ch = get(cl);
+      continue;
+    } else if (ch == '/' || ch == '-') {
+      /* Switch */
+      q = argName;
+      while (ch != ' ' && ch != '=' && ch != ':' && ch != NULLCHAR &&
+	     ch != '\n' && ch != '\t') {
+	*q++ = ch;
+	ch = get(cl);
+      }
+      *q = NULLCHAR;
+
+      for (ad = argDescriptors; ad->argName != NULL; ad++)
+	if (strcmp(ad->argName, argName + 1) == 0) break;
+
+      if (ad->argName == NULL)
+	ExitArgError("Unrecognized argument", argName);
+
+    } else if (ch == '@') {
+      /* Indirection file */
+      ad = &argDescriptorIndirection;
+      ch = get(cl);
+    } else {
+      /* Positional argument */
+      ad = &argDescriptors[posarg++];
+      strcpy(argName, ad->argName);
+    }
+
+    if (ad->argType == ArgTrue) {
+      *(Boolean *) ad->argLoc = TRUE;
+      continue;
+    }
+    if (ad->argType == ArgFalse) {
+      *(Boolean *) ad->argLoc = FALSE;
+      continue;
+    }
+
+    while (ch == ' ' || ch == '=' || ch == ':' || ch == '\t') ch = get(cl);
+    if (ch == NULLCHAR || ch == '\n') {
+      ExitArgError("No value provided for argument", argName);
+    }
+    q = argValue;
+    if (ch == '{') {
+      // Quoting with { }.  No characters have to (or can) be escaped.
+      // Thus the string cannot contain a '}' character.
+      start = ch;
+      ch = get(cl);
+      while (start) {
+	switch (ch) {
+	case NULLCHAR:
+	  start = NULLCHAR;
+	  break;
+	  
+	case '}':
+	  ch = get(cl);
+	  start = NULLCHAR;
+	  break;
+
+	default:
+	  *q++ = ch;
+	  ch = get(cl);
+	  break;
+	}
+      }	  
+    } else if (ch == '\'' || ch == '"') {
+      // Quoting with ' ' or " ", with \ as escape character.
+      // Inconvenient for long strings that may contain Windows filenames.
+      start = ch;
+      ch = get(cl);
+      while (start) {
+	switch (ch) {
+	case NULLCHAR:
+	  start = NULLCHAR;
+	  break;
+
+	default:
+        not_special:
+	  *q++ = ch;
+	  ch = get(cl);
+	  break;
+
+	case '\'':
+	case '\"':
+	  if (ch == start) {
+	    ch = get(cl);
+	    start = NULLCHAR;
+	    break;
+	  } else {
+	    goto not_special;
+	  }
+
+	case '\\':
+          if (ad->argType == ArgFilename
+	      || ad->argType == ArgSettingsFilename) {
+	      goto not_special;
+	  }
+	  ch = get(cl);
+	  switch (ch) {
+	  case NULLCHAR:
+	    ExitArgError("Incomplete \\ escape in value for", argName);
+	    break;
+	  case 'n':
+	    *q++ = '\n';
+	    ch = get(cl);
+	    break;
+	  case 'r':
+	    *q++ = '\r';
+	    ch = get(cl);
+	    break;
+	  case 't':
+	    *q++ = '\t';
+	    ch = get(cl);
+	    break;
+	  case 'b':
+	    *q++ = '\b';
+	    ch = get(cl);
+	    break;
+	  case 'f':
+	    *q++ = '\f';
+	    ch = get(cl);
+	    break;
+	  default:
+	    octval = 0;
+	    for (i = 0; i < 3; i++) {
+	      if (ch >= '0' && ch <= '7') {
+		octval = octval*8 + (ch - '0');
+		ch = get(cl);
+	      } else {
+		break;
+	      }
+	    }
+	    if (i > 0) {
+	      *q++ = (char) octval;
+	    } else {
+	      *q++ = ch;
+	      ch = get(cl);
+	    }
+	    break;
+	  }
+	  break;
+	}
+      }
+    } else {
+      while (ch != ' ' && ch != NULLCHAR && ch != '\t' && ch != '\n') {
+	*q++ = ch;
+	ch = get(cl);
+      }
+    }
+    *q = NULLCHAR;
+
+    switch (ad->argType) {
+    case ArgInt:
+      *(int *) ad->argLoc = atoi(argValue);
+      break;
+
+    case ArgFloat:
+      *(float *) ad->argLoc = (float) atof(argValue);
+      break;
+
+    case ArgString:
+    case ArgFilename:
+      *(char **) ad->argLoc = strdup(argValue);
+      break;
+
+    case ArgSettingsFilename:
+      {
+	char fullname[MSG_SIZ];
+	if (ParseSettingsFile(argValue, fullname)) {
+	  if (ad->argLoc != NULL) {
+	    *(char **) ad->argLoc = strdup(fullname);
+	  }
+	} else {
+	  if (ad->argLoc != NULL) {
+	  } else {
+	    ExitArgError("Failed to open indirection file", argValue);
+	  }
+	}
+      }
+      break;
+
+    case ArgBoolean:
+      switch (argValue[0]) {
+      case 't':
+      case 'T':
+	*(Boolean *) ad->argLoc = TRUE;
+	break;
+      case 'f':
+      case 'F':
+	*(Boolean *) ad->argLoc = FALSE;
+	break;
+      default:
+	ExitArgError("Unrecognized boolean argument value", argValue);
+	break;
+      }
+      break;
+
+    case ArgColor:
+      *(COLORREF *)ad->argLoc = ParseColorName(argValue);
+      break;
+
+    case ArgAttribs: {
+      ColorClass cc = (ColorClass)ad->argLoc;
+      ParseAttribs(&textAttribs[cc].color, &textAttribs[cc].effects, argValue);
+      }
+      break;
+      
+    case ArgBoardSize:
+      *(BoardSize *)ad->argLoc = ParseBoardSize(argValue);
+      break;
+
+    case ArgFont:
+      ParseFontName(argValue, &font[boardSize][(int)ad->argLoc]->mfp);
+      break;
+
+    case ArgCommSettings:
+      ParseCommSettings(argValue, &dcb);
+      break;
+
+    case ArgNone:
+      ExitArgError("Unrecognized argument", argValue);
+      break;
+    }
+  }
+}
+
+VOID
+LFfromMFP(LOGFONT* lf, MyFontParams *mfp)
+{
+  HDC hdc = CreateDC("DISPLAY", NULL, NULL, NULL);
+  lf->lfHeight = -(int)(mfp->pointSize * GetDeviceCaps(hdc, LOGPIXELSY) / 72.0 + 0.5);
+  DeleteDC(hdc);
+  lf->lfWidth = 0;
+  lf->lfEscapement = 0;
+  lf->lfOrientation = 0;
+  lf->lfWeight = mfp->bold ? FW_BOLD : FW_NORMAL;
+  lf->lfItalic = mfp->italic;
+  lf->lfUnderline = mfp->underline;
+  lf->lfStrikeOut = mfp->strikeout;
+  lf->lfCharSet = DEFAULT_CHARSET;
+  lf->lfOutPrecision = OUT_DEFAULT_PRECIS;
+  lf->lfClipPrecision = CLIP_DEFAULT_PRECIS;
+  lf->lfQuality = DEFAULT_QUALITY;
+  lf->lfPitchAndFamily = DEFAULT_PITCH|FF_DONTCARE;
+  strcpy(lf->lfFaceName, mfp->faceName);
+}
+
+VOID
+CreateFontInMF(MyFont *mf)
+{
+  LFfromMFP(&mf->lf, &mf->mfp);
+  if (mf->hf) DeleteObject(mf->hf);
+  mf->hf = CreateFontIndirect(&mf->lf);
+}
+
+VOID
+SetDefaultTextAttribs()
+{
+  ColorClass cc;
+  for (cc = (ColorClass)0; cc < NColorClasses; cc++) {
+    ParseAttribs(&textAttribs[cc].color, 
+		 &textAttribs[cc].effects, 
+	         defaultTextAttribs[cc]);
+  }
+}
+
+VOID
+SetDefaultSounds()
+{
   ColorClass cc;
   SoundClass sc;
-  for (cc = (ColorClass)0; cc < ColorNormal; cc++) {
-    textAttribs[cc].sound.name = strdup((&appData.soundShout)[cc]);
-    textAttribs[cc].sound.data = NULL;
-    MyLoadSound(&textAttribs[cc].sound);
-  }
-  for (cc = ColorNormal; cc < NColorClasses; cc++) {
+  for (cc = (ColorClass)0; cc < NColorClasses; cc++) {
     textAttribs[cc].sound.name = strdup("");
     textAttribs[cc].sound.data = NULL;
   }
   for (sc = (SoundClass)0; sc < NSoundClasses; sc++) {
-    sounds[sc].name = strdup((&appData.soundMove)[sc]);
+    sounds[sc].name = strdup("");
     sounds[sc].data = NULL;
+  }
+  sounds[(int)SoundBell].name = strdup(SOUND_BELL);
+}
+
+VOID
+LoadAllSounds()
+{
+  ColorClass cc;
+  SoundClass sc;
+  for (cc = (ColorClass)0; cc < NColorClasses; cc++) {
+    MyLoadSound(&textAttribs[cc].sound);
+  }
+  for (sc = (SoundClass)0; sc < NSoundClasses; sc++) {
     MyLoadSound(&sounds[sc]);
   }
 }
 
-void
-SetCommPortDefaults()
+VOID
+InitAppData(LPSTR lpCmdLine)
 {
-   memset(&dcb, 0, sizeof(DCB)); // required by VS 2002 +
+  int i, j;
+  char buf[ARG_MAX], currDir[MSG_SIZ];
+  char *dummy, *p;
+
+  programName = szAppName;
+
+  /* Initialize to defaults */
+  lightSquareColor = ParseColorName(LIGHT_SQUARE_COLOR);
+  darkSquareColor = ParseColorName(DARK_SQUARE_COLOR);
+  whitePieceColor = ParseColorName(WHITE_PIECE_COLOR);
+  blackPieceColor = ParseColorName(BLACK_PIECE_COLOR);
+  highlightSquareColor = ParseColorName(HIGHLIGHT_SQUARE_COLOR);
+  premoveHighlightColor = ParseColorName(PREMOVE_HIGHLIGHT_COLOR);
+  consoleBackgroundColor = ParseColorName(COLOR_BKGD);
+  SetDefaultTextAttribs();
+  SetDefaultSounds();
+  appData.movesPerSession = MOVES_PER_SESSION;
+  appData.initString = INIT_STRING;
+  appData.secondInitString = INIT_STRING;
+  appData.firstComputerString = COMPUTER_STRING;
+  appData.secondComputerString = COMPUTER_STRING;
+  appData.firstChessProgram = FIRST_CHESS_PROGRAM;
+  appData.secondChessProgram = SECOND_CHESS_PROGRAM;
+  appData.firstPlaysBlack = FALSE;
+  appData.noChessProgram = FALSE;
+  chessProgram = FALSE;
+  appData.firstHost = FIRST_HOST;
+  appData.secondHost = SECOND_HOST;
+  appData.firstDirectory = FIRST_DIRECTORY;
+  appData.secondDirectory = SECOND_DIRECTORY;
+  appData.bitmapDirectory = "";
+  appData.remoteShell = REMOTE_SHELL;
+  appData.remoteUser = "";
+  appData.timeDelay = TIME_DELAY;
+  appData.timeControl = TIME_CONTROL;
+  appData.timeIncrement = TIME_INCREMENT;
+  appData.icsActive = FALSE;
+  appData.icsHost = "";
+  appData.icsPort = ICS_PORT;
+  appData.icsCommPort = ICS_COMM_PORT;
+  appData.icsLogon = ICS_LOGON;
+  appData.icsHelper = "";
+  appData.useTelnet = FALSE;
+  appData.telnetProgram = TELNET_PROGRAM;
+  appData.gateway = "";
+  appData.loadGameFile = "";
+  appData.loadGameIndex = 0;
+  appData.saveGameFile = "";
+  appData.autoSaveGames = FALSE;
+  appData.loadPositionFile = "";
+  appData.loadPositionIndex = 1;
+  appData.savePositionFile = "";
+  appData.matchMode = FALSE;
+  appData.matchGames = 0;
+  appData.monoMode = FALSE;
+  appData.debugMode = FALSE;
+  appData.clockMode = TRUE;
+  boardSize = (BoardSize) -1; /* determine by screen size */
+  appData.Iconic = FALSE; /*unused*/
+  appData.searchTime = "";
+  appData.searchDepth = 0;
+  appData.showCoords = FALSE;
+  appData.showInfluence = FALSE;
+  appData.ringBellAfterMoves = TRUE; /*obsolete in WinBoard*/
+  appData.autoCallFlag = FALSE;
+  appData.flipView = FALSE;
+  appData.autoFlipView = TRUE;
+  appData.cmailGameName = "";
+  appData.alwaysPromoteToQueen = FALSE;
+  appData.oldSaveStyle = FALSE;
+  appData.quietPlay = FALSE;
+  appData.showThinking = FALSE;
+  appData.ponderNextMove = TRUE;
+  appData.periodicUpdates = TRUE;
+  appData.popupExitMessage = TRUE;
+  appData.popupMoveErrors = FALSE;
+  appData.autoObserve = FALSE;
+  appData.autoComment = FALSE;
+  appData.animate = TRUE;
+  appData.animSpeed = 10;
+  appData.animateDragging = TRUE;
+  appData.highlightLastMove = TRUE;
+  appData.getMoveList = TRUE;
+  appData.testLegality = TRUE;
+  appData.premove = TRUE;
+  appData.premoveWhite = FALSE;
+  appData.premoveWhiteText = "";
+  appData.premoveBlack = FALSE;
+  appData.premoveBlackText = "";
+  appData.icsAlarm = TRUE;
+  appData.icsAlarmTime = 5000;
+  appData.autoRaiseBoard = TRUE;
+  appData.localLineEditing = TRUE;
+  appData.colorize = TRUE;
+  appData.reuseFirst = TRUE;
+  appData.reuseSecond = TRUE;
+  appData.blindfold = FALSE;
   dcb.DCBlength = sizeof(DCB);
   dcb.BaudRate = 9600;
   dcb.fBinary = TRUE;
@@ -1437,48 +1636,287 @@ SetCommPortDefaults()
   dcb.fNull = FALSE;
   dcb.fRtsControl = RTS_CONTROL_ENABLE;
   dcb.fAbortOnError = FALSE;
+  dcb.wReserved = 0;
   dcb.ByteSize = 7;
   dcb.Parity = SPACEPARITY;
   dcb.StopBits = ONESTOPBIT;
+  settingsFileName = SETTINGS_FILE;
+  saveSettingsOnExit = TRUE;
+  boardX = CW_USEDEFAULT;
+  boardY = CW_USEDEFAULT;
+  consoleX = CW_USEDEFAULT; 
+  consoleY = CW_USEDEFAULT; 
+  consoleW = CW_USEDEFAULT;
+  consoleH = CW_USEDEFAULT;
+  analysisX = CW_USEDEFAULT; 
+  analysisY = CW_USEDEFAULT; 
+  analysisW = CW_USEDEFAULT;
+  analysisH = CW_USEDEFAULT;
+  commentX = CW_USEDEFAULT; 
+  commentY = CW_USEDEFAULT; 
+  commentW = CW_USEDEFAULT;
+  commentH = CW_USEDEFAULT;
+  editTagsX = CW_USEDEFAULT; 
+  editTagsY = CW_USEDEFAULT; 
+  editTagsW = CW_USEDEFAULT;
+  editTagsH = CW_USEDEFAULT;
+  gameListX = CW_USEDEFAULT; 
+  gameListY = CW_USEDEFAULT; 
+  gameListW = CW_USEDEFAULT;
+  gameListH = CW_USEDEFAULT;
+  icsTextMenuString = ICS_TEXT_MENU_DEFAULT;
+  icsNames = ICS_NAMES;
+  firstChessProgramNames = FCP_NAMES;
+  secondChessProgramNames = SCP_NAMES;
+  appData.initialMode = "";
+  appData.variant = "normal";
+  appData.firstProtocolVersion = PROTOVER;
+  appData.secondProtocolVersion = PROTOVER;
+  appData.showButtonBar = TRUE;
+#ifdef ZIPPY
+  appData.zippyTalk = ZIPPY_TALK;
+  appData.zippyPlay = ZIPPY_PLAY;
+  appData.zippyLines = ZIPPY_LINES;
+  appData.zippyPinhead = ZIPPY_PINHEAD;
+  appData.zippyPassword = ZIPPY_PASSWORD;
+  appData.zippyPassword2 = ZIPPY_PASSWORD2;
+  appData.zippyWrongPassword = ZIPPY_WRONG_PASSWORD;
+  appData.zippyAcceptOnly = ZIPPY_ACCEPT_ONLY;
+  appData.zippyUseI = ZIPPY_USE_I;
+  appData.zippyBughouse = ZIPPY_BUGHOUSE;
+  appData.zippyNoplayCrafty = ZIPPY_NOPLAY_CRAFTY;
+  appData.zippyGameEnd = ZIPPY_GAME_END;
+  appData.zippyGameStart = ZIPPY_GAME_START;
+  appData.zippyAdjourn = ZIPPY_ADJOURN;
+  appData.zippyAbort = ZIPPY_ABORT;
+  appData.zippyVariants = ZIPPY_VARIANTS;
+  appData.zippyMaxGames = ZIPPY_MAX_GAMES;
+  appData.zippyReplayTimeout = ZIPPY_REPLAY_TIMEOUT;
+#endif
+
+  /* Point font array elements to structures and
+     parse default font names */
+  for (i=0; i<NUM_FONTS; i++) {
+    for (j=0; j<NUM_SIZES; j++) {
+      font[j][i] = &fontRec[j][i];
+      ParseFontName(font[j][i]->def, &font[j][i]->mfp);
+    }
+  }
+  
+  /* Parse default settings file if any */
+  if (ParseSettingsFile(settingsFileName, buf)) {
+    settingsFileName = strdup(buf);
+  }
+
+  /* Parse command line */
+  ParseArgs(StringGet, &lpCmdLine);
+
+  /* Propagate options that affect others */
+  if (appData.matchMode || appData.matchGames) chessProgram = TRUE;
+  if (appData.icsActive || appData.noChessProgram) {
+     chessProgram = FALSE;  /* not local chess program mode */
+  }
+
+  /* Open startup dialog if needed */
+  if ((!appData.noChessProgram && !chessProgram && !appData.icsActive) ||
+      (appData.icsActive && *appData.icsHost == NULLCHAR) ||
+      (chessProgram && (*appData.firstChessProgram == NULLCHAR ||
+                        *appData.secondChessProgram == NULLCHAR))) {
+    FARPROC lpProc;
+    
+    lpProc = MakeProcInstance((FARPROC)StartupDialog, hInst);
+    DialogBox(hInst, MAKEINTRESOURCE(DLG_Startup), NULL, (DLGPROC)lpProc);
+    FreeProcInstance(lpProc);
+  }
+
+  /* Make sure save files land in the right (?) directory */
+  if (GetFullPathName(appData.saveGameFile, MSG_SIZ, buf, &dummy)) {
+    appData.saveGameFile = strdup(buf);
+  }
+  if (GetFullPathName(appData.savePositionFile, MSG_SIZ, buf, &dummy)) {
+    appData.savePositionFile = strdup(buf);
+  }
+
+  /* Finish initialization for fonts and sounds */
+  for (i=0; i<NUM_FONTS; i++) {
+    for (j=0; j<NUM_SIZES; j++) {
+      CreateFontInMF(font[j][i]);
+    }
+  }
+  /* xboard, and older WinBoards, controlled the move sound with the
+     appData.ringBellAfterMoves option.  In the current WinBoard, we
+     always turn the option on (so that the backend will call us),
+     then let the user turn the sound off by setting it to silence if
+     desired.  To accommodate old winboard.ini files saved by old
+     versions of WinBoard, we also turn off the sound if the option
+     was initially set to false. */
+  if (!appData.ringBellAfterMoves) {
+    sounds[(int)SoundMove].name = strdup("");
+    appData.ringBellAfterMoves = TRUE;
+  }
+  GetCurrentDirectory(MSG_SIZ, currDir);
+  SetCurrentDirectory(installDir);
+  LoadAllSounds();
+  SetCurrentDirectory(currDir);
+
+  p = icsTextMenuString;
+  if (p[0] == '@') {
+    FILE* f = fopen(p + 1, "r");
+    if (f == NULL) {
+      DisplayFatalError(p + 1, errno, 2);
+      return;
+    }
+    i = fread(buf, 1, sizeof(buf)-1, f);
+    fclose(f);
+    buf[i] = NULLCHAR;
+    p = buf;
+  }
+  ParseIcsTextMenu(strdup(p));
 }
 
-// [HGM] args: these three cases taken out to stay in front-end
-void
-SaveFontArg(FILE *f, ArgDescriptor *ad)
-{	// in WinBoard every board size has its own font, and the "argLoc" identifies the table,
-	// while the curent board size determines the element. This system should be ported to XBoard.
-	// What the table contains pointers to, and how to print the font description, remains platform-dependent
-        int bs;
-	for (bs=0; bs<NUM_SIZES; bs++) {
-	  MyFontParams *mfp = &font[bs][(int) ad->argLoc]->mfp;
-          fprintf(f, "/size=%s ", sizeInfo[bs].name);
-	  fprintf(f, "/%s=\"%s:%g%s%s%s%s%sc%d\"\n",
-	    ad->argName, mfp->faceName, mfp->pointSize,
-            mfp->bold || mfp->italic || mfp->underline || mfp->strikeout ? " " : "",
-	    mfp->bold ? "b" : "",
-	    mfp->italic ? "i" : "",
-	    mfp->underline ? "u" : "",
-	    mfp->strikeout ? "s" : "",
-            (int)mfp->charset);
+
+VOID
+InitMenuChecks()
+{
+  HMENU hmenu = GetMenu(hwndMain);
+
+  (void) EnableMenuItem(hmenu, IDM_CommPort,
+			MF_BYCOMMAND|((appData.icsActive &&
+				       *appData.icsCommPort != NULLCHAR) ?
+				      MF_ENABLED : MF_GRAYED));
+  (void) CheckMenuItem(hmenu, IDM_SaveSettingsOnExit,
+		       MF_BYCOMMAND|(saveSettingsOnExit ?
+				     MF_CHECKED : MF_UNCHECKED));
+}
+
+
+VOID
+SaveSettings(char* name)
+{
+  FILE *f;
+  ArgDescriptor *ad;
+  WINDOWPLACEMENT wp;
+  char dir[MSG_SIZ];
+
+  if (!hwndMain) return;
+
+  GetCurrentDirectory(MSG_SIZ, dir);
+  SetCurrentDirectory(installDir);
+  f = fopen(name, "w");
+  SetCurrentDirectory(dir);
+  if (f == NULL) {
+    DisplayError(name, errno);
+    return;
+  }
+  fprintf(f, ";\n");
+  fprintf(f, "; %s %s.%s Save Settings file\n", PRODUCT, VERSION, PATCHLEVEL);
+  fprintf(f, ";\n");
+  fprintf(f, "; You can edit the values of options that are already set in this file,\n");
+  fprintf(f, "; but if you add other options, the next Save Settings will not save them.\n");
+  fprintf(f, "; Use a shortcut, an @indirection file, or a .bat file instead.\n");
+  fprintf(f, ";\n");
+
+  wp.length = sizeof(WINDOWPLACEMENT);
+  GetWindowPlacement(hwndMain, &wp);
+  boardX = wp.rcNormalPosition.left;
+  boardY = wp.rcNormalPosition.top;
+
+  if (hwndConsole) {
+    GetWindowPlacement(hwndConsole, &wp);
+    consoleX = wp.rcNormalPosition.left;
+    consoleY = wp.rcNormalPosition.top;
+    consoleW = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+    consoleH = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+  }
+
+  if (analysisDialog) {
+    GetWindowPlacement(analysisDialog, &wp);
+    analysisX = wp.rcNormalPosition.left;
+    analysisY = wp.rcNormalPosition.top;
+    analysisW = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+    analysisH = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+  }
+
+  if (commentDialog) {
+    GetWindowPlacement(commentDialog, &wp);
+    commentX = wp.rcNormalPosition.left;
+    commentY = wp.rcNormalPosition.top;
+    commentW = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+    commentH = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+  }
+
+  if (editTagsDialog) {
+    GetWindowPlacement(editTagsDialog, &wp);
+    editTagsX = wp.rcNormalPosition.left;
+    editTagsY = wp.rcNormalPosition.top;
+    editTagsW = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+    editTagsH = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+  }
+
+  if (gameListDialog) {
+    GetWindowPlacement(gameListDialog, &wp);
+    gameListX = wp.rcNormalPosition.left;
+    gameListY = wp.rcNormalPosition.top;
+    gameListW = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
+    gameListH = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
+  }
+
+  for (ad = argDescriptors; ad->argName != NULL; ad++) {
+    if (!ad->save) continue;
+    switch (ad->argType) {
+    case ArgString:
+      {
+	char *p = *(char **)ad->argLoc;
+	if ((strchr(p, '\\') || strchr(p, '\n')) && !strchr(p, '}')) {
+	  /* Quote multiline values or \-containing values
+	     with { } if possible */
+	  fprintf(f, "/%s={%s}\n", ad->argName, p);
+	} else {
+	  /* Else quote with " " */
+	  fprintf(f, "/%s=\"", ad->argName);
+	  while (*p) {
+	    if (*p == '\n') fprintf(f, "\n");
+	    else if (*p == '\r') fprintf(f, "\\r");
+	    else if (*p == '\t') fprintf(f, "\\t");
+	    else if (*p == '\b') fprintf(f, "\\b");
+	    else if (*p == '\f') fprintf(f, "\\f");
+	    else if (*p < ' ') fprintf(f, "\\%03o", *p);
+	    else if (*p == '\"') fprintf(f, "\\\"");
+	    else if (*p == '\\') fprintf(f, "\\\\");
+	    else putc(*p, f);
+	    p++;
+	  }
+	  fprintf(f, "\"\n");
 	}
       }
-
-void
-ExportSounds()
-{ // [HGM] copy the names from the internal WB variables to appData
-  ColorClass cc;
-  SoundClass sc;
-  for (cc = (ColorClass)0; cc < ColorNormal; cc++)
-    (&appData.soundShout)[cc] = textAttribs[cc].sound.name;
-  for (sc = (SoundClass)0; sc < NSoundClasses; sc++)
-    (&appData.soundMove)[sc] = sounds[sc].name;
-}
-
-void
-SaveAttribsArg(FILE *f, ArgDescriptor *ad)
-{	// here the "argLoc" defines a table index. It could have contained the 'ta' pointer itself, though
+      break;
+    case ArgInt:
+      fprintf(f, "/%s=%d\n", ad->argName, *(int *)ad->argLoc);
+      break;
+    case ArgFloat:
+      fprintf(f, "/%s=%g\n", ad->argName, *(float *)ad->argLoc);
+      break;
+    case ArgBoolean:
+      fprintf(f, "/%s=%s\n", ad->argName, 
+	(*(Boolean *)ad->argLoc) ? "true" : "false");
+      break;
+    case ArgTrue:
+      if (*(Boolean *)ad->argLoc) fprintf(f, "/%s\n", ad->argName);
+      break;
+    case ArgFalse:
+      if (!*(Boolean *)ad->argLoc) fprintf(f, "/%s\n", ad->argName);
+      break;
+    case ArgColor:
+      {
+	COLORREF color = *(COLORREF *)ad->argLoc;
+	fprintf(f, "/%s=#%02x%02x%02x\n", ad->argName, 
+	  color&0xff, (color>>8)&0xff, (color>>16)&0xff);
+      }
+      break;
+    case ArgAttribs:
+      {
 	MyTextAttribs* ta = &textAttribs[(ColorClass)ad->argLoc];
-	fprintf(f, "/%s=\"%s%s%s%s%s#%02lx%02lx%02lx\"\n", ad->argName,
+	fprintf(f, "/%s=\"%s%s%s%s%s#%02x%02x%02x\"\n", ad->argName,
           (ta->effects & CFE_BOLD) ? "b" : "",
           (ta->effects & CFE_ITALIC) ? "i" : "",
           (ta->effects & CFE_UNDERLINE) ? "u" : "",
@@ -1486,88 +1924,42 @@ SaveAttribsArg(FILE *f, ArgDescriptor *ad)
           (ta->effects) ? " " : "",
 	  ta->color&0xff, (ta->color >> 8)&0xff, (ta->color >> 16)&0xff);
       }
-
-void
-SaveColor(FILE *f, ArgDescriptor *ad)
-{	// in WinBoard the color is an int and has to be converted to text. In X it would be a string already?
-	COLORREF color = *(COLORREF *)colorVariable[(int)ad->argLoc];
-	fprintf(f, "/%s=#%02lx%02lx%02lx\n", ad->argName, 
-	  color&0xff, (color>>8)&0xff, (color>>16)&0xff);
-}
-
-void
-SaveBoardSize(FILE *f, char *name, void *addr)
-{ // wrapper to shield back-end from BoardSize & sizeInfo
-  fprintf(f, "/%s=%s\n", name, sizeInfo[*(BoardSize *)addr].name);
-}
-
-void
-ParseCommPortSettings(char *s)
-{ // wrapper to keep dcb from back-end
-  ParseCommSettings(s, &dcb);
-}
-
-void
-GetWindowCoords()
-{ // wrapper to shield use of window handles from back-end (make addressible by number?)
-  GetActualPlacement(hwndMain, &wpMain);
-  GetActualPlacement(hwndConsole, &wpConsole);
-  GetActualPlacement(commentDialog, &wpComment);
-  GetActualPlacement(editTagsDialog, &wpTags);
-  GetActualPlacement(gameListDialog, &wpGameList);
-  GetActualPlacement(moveHistoryDialog, &wpMoveHistory);
-  GetActualPlacement(evalGraphDialog, &wpEvalGraph);
-  GetActualPlacement(engineOutputDialog, &wpEngineOutput);
-}
-
-void
-PrintCommPortSettings(FILE *f, char *name)
-{ // wrapper to shield back-end from DCB
-      PrintCommSettings(f, name, &dcb);
-}
-
-int
-MySearchPath(char *installDir, char *name, char *fullname)
-{
-  char *dummy, buf[MSG_SIZ], *p = name, *q;
-  if(name[0]== '%') {
-    fullname[0] = 0; // [HGM] first expand any environment variables in the given name
-    while(*p == '%' && (q = strchr(p+1, '%'))) { // [HGM] recognize %*% as environment variable
-      safeStrCpy(buf, p+1, sizeof(buf)/sizeof(buf[0]) );
-      *strchr(buf, '%') = 0;
-      strcat(fullname, getenv(buf));
-      p = q+1; while(*p == '\\') { strcat(fullname, "\\"); p++; }
+      break;
+    case ArgFilename:
+      if (strchr(*(char **)ad->argLoc, '\"')) {
+	fprintf(f, "/%s='%s'\n", ad->argName, *(char **)ad->argLoc);
+      } else {
+	fprintf(f, "/%s=\"%s\"\n", ad->argName, *(char **)ad->argLoc);
+      }
+      break;
+    case ArgBoardSize:
+      fprintf(f, "/%s=%s\n", ad->argName,
+	      sizeInfo[*(BoardSize *)ad->argLoc].name);
+      break;
+    case ArgFont:
+      {
+        int bs;
+	for (bs=0; bs<NUM_SIZES; bs++) {
+	  MyFontParams *mfp = &font[bs][(int) ad->argLoc]->mfp;
+          fprintf(f, "/size=%s ", sizeInfo[bs].name);
+	  fprintf(f, "/%s=\"%s:%g%s%s%s%s%s\"\n",
+	    ad->argName, mfp->faceName, mfp->pointSize,
+            mfp->bold || mfp->italic || mfp->underline || mfp->strikeout ? " " : "",
+	    mfp->bold ? "b" : "",
+	    mfp->italic ? "i" : "",
+	    mfp->underline ? "u" : "",
+	    mfp->strikeout ? "s" : "");
+	}
+      }
+      break;
+    case ArgCommSettings:
+      PrintCommSettings(f, ad->argName, (DCB *)ad->argLoc);
     }
-    strcat(fullname, p); // after environment variables (if any), take the remainder of the given name
-    if(appData.debugMode) fprintf(debugFP, "name = '%s', expanded name = '%s'\n", name, fullname);
-    return (int) strlen(fullname);
   }
-  return (int) SearchPath(installDir, name, NULL, MSG_SIZ, fullname, &dummy);
+  fclose(f);
 }
 
-int
-MyGetFullPathName(char *name, char *fullname)
-{
-  char *dummy;
-  return (int) GetFullPathName(name, MSG_SIZ, fullname, &dummy);
-}
 
-int
-MainWindowUp()
-{ // [HGM] args: allows testing if main window is realized from back-end
-  return hwndMain != NULL;
-}
-
-void
-PopUpStartupDialog()
-{
-    FARPROC lpProc;
-    
-    LoadLanguageFile(appData.language);
-    lpProc = MakeProcInstance((FARPROC)StartupDialog, hInst);
-    DialogBox(hInst, MAKEINTRESOURCE(DLG_Startup), NULL, (DLGPROC)lpProc);
-    FreeProcInstance(lpProc);
-}
 
 /*---------------------------------------------------------------------------*\
  *
@@ -1575,561 +1967,16 @@ PopUpStartupDialog()
  *
 \*---------------------------------------------------------------------------*/
 
-/* [AS] Draw square using background texture */
-static void DrawTile( int dx, int dy, int dw, int dh, HDC dst, HDC src, int mode, int sx, int sy )
-{
-    XFORM   x;
-
-    if( mode == 0 ) {
-        return; /* Should never happen! */
-    }
-
-    SetGraphicsMode( dst, GM_ADVANCED );
-
-    switch( mode ) {
-    case 1:
-        /* Identity */
-        break;
-    case 2:
-        /* X reflection */
-        x.eM11 = -1.0;
-        x.eM12 = 0;
-        x.eM21 = 0;
-        x.eM22 = 1.0;
-        x.eDx = (FLOAT) dw + dx - 1;
-        x.eDy = 0;
-        dx = 0;
-        SetWorldTransform( dst, &x );
-        break;
-    case 3:
-        /* Y reflection */
-        x.eM11 = 1.0;
-        x.eM12 = 0;
-        x.eM21 = 0;
-        x.eM22 = -1.0;
-        x.eDx = 0;
-        x.eDy = (FLOAT) dh + dy - 1;
-        dy = 0;
-        SetWorldTransform( dst, &x );
-        break;
-    case 4:
-        /* X/Y flip */
-        x.eM11 = 0;
-        x.eM12 = 1.0;
-        x.eM21 = 1.0;
-        x.eM22 = 0;
-        x.eDx = (FLOAT) dx;
-        x.eDy = (FLOAT) dy;
-        dx = 0;
-        dy = 0;
-        SetWorldTransform( dst, &x );
-        break;
-    }
-
-    BitBlt( dst, dx, dy, dw, dh, src, sx, sy, SRCCOPY );
-
-    x.eM11 = 1.0;
-    x.eM12 = 0;
-    x.eM21 = 0;
-    x.eM22 = 1.0;
-    x.eDx = 0;
-    x.eDy = 0;
-    SetWorldTransform( dst, &x );
-
-    ModifyWorldTransform( dst, 0, MWT_IDENTITY );
-}
-
-/* [AS] [HGM] Make room for more piece types, so all pieces can be different */
-enum {
-    PM_WP = (int) WhitePawn, 
-    PM_WN = (int) WhiteKnight, 
-    PM_WB = (int) WhiteBishop, 
-    PM_WR = (int) WhiteRook, 
-    PM_WQ = (int) WhiteQueen, 
-    PM_WF = (int) WhiteFerz, 
-    PM_WW = (int) WhiteWazir, 
-    PM_WE = (int) WhiteAlfil, 
-    PM_WM = (int) WhiteMan, 
-    PM_WO = (int) WhiteCannon, 
-    PM_WU = (int) WhiteUnicorn, 
-    PM_WH = (int) WhiteNightrider, 
-    PM_WA = (int) WhiteAngel, 
-    PM_WC = (int) WhiteMarshall, 
-    PM_WAB = (int) WhiteCardinal, 
-    PM_WD = (int) WhiteDragon, 
-    PM_WL = (int) WhiteLance, 
-    PM_WS = (int) WhiteCobra, 
-    PM_WV = (int) WhiteFalcon, 
-    PM_WSG = (int) WhiteSilver, 
-    PM_WG = (int) WhiteGrasshopper, 
-    PM_WK = (int) WhiteKing,
-    PM_BP = (int) BlackPawn, 
-    PM_BN = (int) BlackKnight, 
-    PM_BB = (int) BlackBishop, 
-    PM_BR = (int) BlackRook, 
-    PM_BQ = (int) BlackQueen, 
-    PM_BF = (int) BlackFerz, 
-    PM_BW = (int) BlackWazir, 
-    PM_BE = (int) BlackAlfil, 
-    PM_BM = (int) BlackMan,
-    PM_BO = (int) BlackCannon, 
-    PM_BU = (int) BlackUnicorn, 
-    PM_BH = (int) BlackNightrider, 
-    PM_BA = (int) BlackAngel, 
-    PM_BC = (int) BlackMarshall, 
-    PM_BG = (int) BlackGrasshopper, 
-    PM_BAB = (int) BlackCardinal,
-    PM_BD = (int) BlackDragon,
-    PM_BL = (int) BlackLance,
-    PM_BS = (int) BlackCobra,
-    PM_BV = (int) BlackFalcon,
-    PM_BSG = (int) BlackSilver,
-    PM_BK = (int) BlackKing
-};
-
-static HFONT hPieceFont = NULL;
-static HBITMAP hPieceMask[(int) EmptySquare];
-static HBITMAP hPieceFace[(int) EmptySquare];
-static int fontBitmapSquareSize = 0;
-static char pieceToFontChar[(int) EmptySquare] =
-                              { 'p', 'n', 'b', 'r', 'q', 
-                      'n', 'b', 'p', 'n', 'b', 'r', 'b', 'r', 'q', 'k',
-                      'k', 'o', 'm', 'v', 't', 'w', 
-                      'v', 't', 'o', 'm', 'v', 't', 'v', 't', 'w', 'l',
-                                                              'l' };
-
-extern BOOL SetCharTable( char *table, const char * map );
-/* [HGM] moved to backend.c */
-
-static void SetPieceBackground( HDC hdc, COLORREF color, int mode )
-{
-    HBRUSH hbrush;
-    BYTE r1 = GetRValue( color );
-    BYTE g1 = GetGValue( color );
-    BYTE b1 = GetBValue( color );
-    BYTE r2 = r1 / 2;
-    BYTE g2 = g1 / 2;
-    BYTE b2 = b1 / 2;
-    RECT rc;
-
-    /* Create a uniform background first */
-    hbrush = CreateSolidBrush( color );
-    SetRect( &rc, 0, 0, squareSize, squareSize );
-    FillRect( hdc, &rc, hbrush );
-    DeleteObject( hbrush );
-    
-    if( mode == 1 ) {
-        /* Vertical gradient, good for pawn, knight and rook, less for queen and king */
-        int steps = squareSize / 2;
-        int i;
-
-        for( i=0; i<steps; i++ ) {
-            BYTE r = r1 - (r1-r2) * i / steps;
-            BYTE g = g1 - (g1-g2) * i / steps;
-            BYTE b = b1 - (b1-b2) * i / steps;
-
-            hbrush = CreateSolidBrush( RGB(r,g,b) );
-            SetRect( &rc, i + squareSize - steps, 0, i + squareSize - steps + 1, squareSize );
-            FillRect( hdc, &rc, hbrush );
-            DeleteObject(hbrush);
-        }
-    }
-    else if( mode == 2 ) {
-        /* Diagonal gradient, good more or less for every piece */
-        POINT triangle[3];
-        HPEN hpen = SelectObject( hdc, GetStockObject(NULL_PEN) );
-        HBRUSH hbrush_old;
-        int steps = squareSize;
-        int i;
-
-        triangle[0].x = squareSize - steps;
-        triangle[0].y = squareSize;
-        triangle[1].x = squareSize;
-        triangle[1].y = squareSize;
-        triangle[2].x = squareSize;
-        triangle[2].y = squareSize - steps;
-
-        for( i=0; i<steps; i++ ) {
-            BYTE r = r1 - (r1-r2) * i / steps;
-            BYTE g = g1 - (g1-g2) * i / steps;
-            BYTE b = b1 - (b1-b2) * i / steps;
-
-            hbrush = CreateSolidBrush( RGB(r,g,b) );
-            hbrush_old = SelectObject( hdc, hbrush );
-            Polygon( hdc, triangle, 3 );
-            SelectObject( hdc, hbrush_old );
-            DeleteObject(hbrush);
-            triangle[0].x++;
-            triangle[2].y++;
-        }
-
-        SelectObject( hdc, hpen );
-    }
-}
-
-/*
-    [AS] The method I use to create the bitmaps it a bit tricky, but it
-    seems to work ok. The main problem here is to find the "inside" of a chess
-    piece: follow the steps as explained below.
-*/
-static void CreatePieceMaskFromFont( HDC hdc_window, HDC hdc, int index )
-{
-    HBITMAP hbm;
-    HBITMAP hbm_old;
-    COLORREF chroma = RGB(0xFF,0x00,0xFF);
-    RECT rc;
-    SIZE sz;
-    POINT pt;
-    int backColor = whitePieceColor; 
-    int foreColor = blackPieceColor;
-    
-    if( index < (int)BlackPawn && appData.fontBackColorWhite != appData.fontForeColorWhite ) {
-        backColor = appData.fontBackColorWhite;
-        foreColor = appData.fontForeColorWhite;
-    }
-    else if( index >= (int)BlackPawn && appData.fontBackColorBlack != appData.fontForeColorBlack ) {
-        backColor = appData.fontBackColorBlack;
-        foreColor = appData.fontForeColorBlack;
-    }
-
-    /* Mask */
-    hbm = CreateCompatibleBitmap( hdc_window, squareSize, squareSize );
-
-    hbm_old = SelectObject( hdc, hbm );
-
-    rc.left = 0;
-    rc.top = 0;
-    rc.right = squareSize;
-    rc.bottom = squareSize;
-
-    /* Step 1: background is now black */
-    FillRect( hdc, &rc, GetStockObject(BLACK_BRUSH) );
-
-    GetTextExtentPoint32( hdc, &pieceToFontChar[index], 1, &sz );
-
-    pt.x = (squareSize - sz.cx) / 2;
-    pt.y = (squareSize - sz.cy) / 2;
-
-    SetBkMode( hdc, TRANSPARENT );
-    SetTextColor( hdc, chroma );
-    /* Step 2: the piece has been drawn in purple, there are now black and purple in this bitmap */
-    TextOut( hdc, pt.x, pt.y, &pieceToFontChar[appData.allWhite && index >= (int)BlackPawn ? index - (int)BlackPawn : index], 1 );
-
-    SelectObject( hdc, GetStockObject(WHITE_BRUSH) );
-    /* Step 3: the area outside the piece is filled with white */
-//    FloodFill( hdc, 0, 0, chroma );
-    ExtFloodFill( hdc, 0, 0, 0, FLOODFILLSURFACE );
-    ExtFloodFill( hdc, 0, squareSize-1, 0, FLOODFILLSURFACE ); // [HGM] fill from all 4 corners, for if piece too big
-    ExtFloodFill( hdc, squareSize-1, 0, 0, FLOODFILLSURFACE );
-    ExtFloodFill( hdc, squareSize-1, squareSize-1, 0, FLOODFILLSURFACE );
-    SelectObject( hdc, GetStockObject(BLACK_BRUSH) );
-    /* 
-        Step 4: this is the tricky part, the area inside the piece is filled with black,
-        but if the start point is not inside the piece we're lost!
-        There should be a better way to do this... if we could create a region or path
-        from the fill operation we would be fine for example.
-    */
-//    FloodFill( hdc, squareSize / 2, squareSize / 2, RGB(0xFF,0xFF,0xFF) );
-    ExtFloodFill( hdc, squareSize / 2, squareSize / 2, RGB(0xFF,0xFF,0xFF), FLOODFILLBORDER );
-
-    {   /* [HGM] shave off edges of mask, in an attempt to correct for the fact that FloodFill does not work correctly under Win XP */
-        HDC dc2 = CreateCompatibleDC( hdc_window );
-        HBITMAP bm2 = CreateCompatibleBitmap( hdc_window, squareSize, squareSize );
-
-        SelectObject( dc2, bm2 );
-        BitBlt( dc2, 0, 0, squareSize, squareSize, hdc, 0, 0, SRCCOPY ); // make copy
-        BitBlt( hdc, 0, 1, squareSize-2, squareSize-2, dc2, 1, 1, SRCPAINT );
-        BitBlt( hdc, 2, 1, squareSize-2, squareSize-2, dc2, 1, 1, SRCPAINT );
-        BitBlt( hdc, 1, 0, squareSize-2, squareSize-2, dc2, 1, 1, SRCPAINT );
-        BitBlt( hdc, 1, 2, squareSize-2, squareSize-2, dc2, 1, 1, SRCPAINT );
-
-        DeleteDC( dc2 );
-        DeleteObject( bm2 );
-    }
-
-    SetTextColor( hdc, 0 );
-    /* 
-        Step 5: some fonts have "disconnected" areas that are skipped by the fill:
-        draw the piece again in black for safety.
-    */
-    TextOut( hdc, pt.x, pt.y, &pieceToFontChar[appData.allWhite && index >= (int)BlackPawn ? index - (int)BlackPawn : index], 1 );
-
-    SelectObject( hdc, hbm_old );
-
-    if( hPieceMask[index] != NULL ) {
-        DeleteObject( hPieceMask[index] );
-    }
-
-    hPieceMask[index] = hbm;
-
-    /* Face */
-    hbm = CreateCompatibleBitmap( hdc_window, squareSize, squareSize );
-
-    SelectObject( hdc, hbm );
-
-    {
-        HDC dc1 = CreateCompatibleDC( hdc_window );
-        HDC dc2 = CreateCompatibleDC( hdc_window );
-        HBITMAP bm2 = CreateCompatibleBitmap( hdc_window, squareSize, squareSize );
-
-        SelectObject( dc1, hPieceMask[index] );
-        SelectObject( dc2, bm2 );
-        FillRect( dc2, &rc, GetStockObject(WHITE_BRUSH) );
-        BitBlt( dc2, 0, 0, squareSize, squareSize, dc1, 0, 0, SRCINVERT );
-        
-        /* 
-            Now dc2 contains the inverse of the piece mask, i.e. a mask that preserves
-            the piece background and deletes (makes transparent) the rest.
-            Thanks to that mask, we are free to paint the background with the greates
-            freedom, as we'll be able to mask off the unwanted parts when finished.
-            We use this, to make gradients and give the pieces a "roundish" look.
-        */
-        SetPieceBackground( hdc, backColor, 2 );
-        BitBlt( hdc, 0, 0, squareSize, squareSize, dc2, 0, 0, SRCAND );
-
-        DeleteDC( dc2 );
-        DeleteDC( dc1 );
-        DeleteObject( bm2 );
-    }
-
-    SetTextColor( hdc, foreColor );
-    TextOut( hdc, pt.x, pt.y, &pieceToFontChar[appData.allWhite && index >= (int)BlackPawn ? index - (int)BlackPawn : index], 1 );
-
-    SelectObject( hdc, hbm_old );
-
-    if( hPieceFace[index] != NULL ) {
-        DeleteObject( hPieceFace[index] );
-    }
-
-    hPieceFace[index] = hbm;
-}
-
-static int TranslatePieceToFontPiece( int piece )
-{
-    switch( piece ) {
-    case BlackPawn:
-        return PM_BP;
-    case BlackKnight:
-        return PM_BN;
-    case BlackBishop:
-        return PM_BB;
-    case BlackRook:
-        return PM_BR;
-    case BlackQueen:
-        return PM_BQ;
-    case BlackKing:
-        return PM_BK;
-    case WhitePawn:
-        return PM_WP;
-    case WhiteKnight:
-        return PM_WN;
-    case WhiteBishop:
-        return PM_WB;
-    case WhiteRook:
-        return PM_WR;
-    case WhiteQueen:
-        return PM_WQ;
-    case WhiteKing:
-        return PM_WK;
-
-    case BlackAngel:
-        return PM_BA;
-    case BlackMarshall:
-        return PM_BC;
-    case BlackFerz:
-        return PM_BF;
-    case BlackNightrider:
-        return PM_BH;
-    case BlackAlfil:
-        return PM_BE;
-    case BlackWazir:
-        return PM_BW;
-    case BlackUnicorn:
-        return PM_BU;
-    case BlackCannon:
-        return PM_BO;
-    case BlackGrasshopper:
-        return PM_BG;
-    case BlackMan:
-        return PM_BM;
-    case BlackSilver:
-        return PM_BSG;
-    case BlackLance:
-        return PM_BL;
-    case BlackFalcon:
-        return PM_BV;
-    case BlackCobra:
-        return PM_BS;
-    case BlackCardinal:
-        return PM_BAB;
-    case BlackDragon:
-        return PM_BD;
-
-    case WhiteAngel:
-        return PM_WA;
-    case WhiteMarshall:
-        return PM_WC;
-    case WhiteFerz:
-        return PM_WF;
-    case WhiteNightrider:
-        return PM_WH;
-    case WhiteAlfil:
-        return PM_WE;
-    case WhiteWazir:
-        return PM_WW;
-    case WhiteUnicorn:
-        return PM_WU;
-    case WhiteCannon:
-        return PM_WO;
-    case WhiteGrasshopper:
-        return PM_WG;
-    case WhiteMan:
-        return PM_WM;
-    case WhiteSilver:
-        return PM_WSG;
-    case WhiteLance:
-        return PM_WL;
-    case WhiteFalcon:
-        return PM_WV;
-    case WhiteCobra:
-        return PM_WS;
-    case WhiteCardinal:
-        return PM_WAB;
-    case WhiteDragon:
-        return PM_WD;
-    }
-
-    return 0;
-}
-
-void CreatePiecesFromFont()
-{
-    LOGFONT lf;
-    HDC hdc_window = NULL;
-    HDC hdc = NULL;
-    HFONT hfont_old;
-    int fontHeight;
-    int i;
-
-    if( fontBitmapSquareSize < 0 ) {
-        /* Something went seriously wrong in the past: do not try to recreate fonts! */
-        return;
-    }
-
-    if( !appData.useFont || appData.renderPiecesWithFont == NULL ||
-            appData.renderPiecesWithFont[0] == NULLCHAR || appData.renderPiecesWithFont[0] == '*' ) {
-        fontBitmapSquareSize = -1;
-        return;
-    }
-
-    if( fontBitmapSquareSize != squareSize ) {
-        hdc_window = GetDC( hwndMain );
-        hdc = CreateCompatibleDC( hdc_window );
-
-        if( hPieceFont != NULL ) {
-            DeleteObject( hPieceFont );
-        }
-        else {
-            for( i=0; i<=(int)BlackKing; i++ ) {
-                hPieceMask[i] = NULL;
-                hPieceFace[i] = NULL;
-            }
-        }
-
-        fontHeight = 75;
-
-        if( appData.fontPieceSize >= 50 && appData.fontPieceSize <= 150 ) {
-            fontHeight = appData.fontPieceSize;
-        }
-
-        fontHeight = (fontHeight * squareSize) / 100;
-
-        lf.lfHeight = -MulDiv( fontHeight, GetDeviceCaps(hdc, LOGPIXELSY), 72 );
-        lf.lfWidth = 0;
-        lf.lfEscapement = 0;
-        lf.lfOrientation = 0;
-        lf.lfWeight = FW_NORMAL;
-        lf.lfItalic = 0;
-        lf.lfUnderline = 0;
-        lf.lfStrikeOut = 0;
-        lf.lfCharSet = DEFAULT_CHARSET;
-        lf.lfOutPrecision = OUT_DEFAULT_PRECIS;
-        lf.lfClipPrecision = CLIP_DEFAULT_PRECIS;
-        lf.lfQuality = PROOF_QUALITY;
-        lf.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
-        strncpy( lf.lfFaceName, appData.renderPiecesWithFont, sizeof(lf.lfFaceName) );
-        lf.lfFaceName[ sizeof(lf.lfFaceName) - 1 ] = '\0';
-
-        hPieceFont = CreateFontIndirect( &lf );
-
-        if( hPieceFont == NULL ) {
-            fontBitmapSquareSize = -2;
-        }
-        else {
-            /* Setup font-to-piece character table */
-            if( ! SetCharTable(pieceToFontChar, appData.fontToPieceTable) ) {
-                /* No (or wrong) global settings, try to detect the font */
-                if( strstr(lf.lfFaceName,"Alpha") != NULL ) {
-                    /* Alpha */
-                    SetCharTable(pieceToFontChar, "phbrqkojntwl");
-                }
-                else if( strstr(lf.lfFaceName,"DiagramTT") != NULL ) {
-                    /* DiagramTT* family */
-                    SetCharTable(pieceToFontChar, "PNLRQKpnlrqk");
-                }
-                else if( strstr(lf.lfFaceName,"WinboardF") != NULL ) {
-                    /* Fairy symbols */
-                     SetCharTable(pieceToFontChar, "PNBRQFEACWMOHIJGDVSLUKpnbrqfeacwmohijgdvsluk");
-                }
-                else if( strstr(lf.lfFaceName,"GC2004D") != NULL ) {
-                    /* Good Companion (Some characters get warped as literal :-( */
-                    char s[] = "1cmWG0??S??oYI23wgQU";
-                    s[0]=0xB9; s[1]=0xA9; s[6]=0xB1; s[11]=0xBB; s[12]=0xAB; s[17]=0xB3;
-                    SetCharTable(pieceToFontChar, s);
-                }
-                else {
-                    /* Cases, Condal, Leipzig, Lucena, Marroquin, Merida, Usual */
-                    SetCharTable(pieceToFontChar, "pnbrqkomvtwl");
-                }
-            }
-
-            /* Create bitmaps */
-            hfont_old = SelectObject( hdc, hPieceFont );
-	    for(i=(int)WhitePawn; i<(int)EmptySquare; i++) /* [HGM] made a loop for this */
-		if(PieceToChar((ChessSquare)i) != '.')     /* skip unused pieces         */
-		    CreatePieceMaskFromFont( hdc_window, hdc, i );
-
-            SelectObject( hdc, hfont_old );
-
-            fontBitmapSquareSize = squareSize;
-        }
-    }
-
-    if( hdc != NULL ) {
-        DeleteDC( hdc );
-    }
-
-    if( hdc_window != NULL ) {
-        ReleaseDC( hwndMain, hdc_window );
-    }
-}
-
 HBITMAP
 DoLoadBitmap(HINSTANCE hinst, char *piece, int squareSize, char *suffix)
 {
-  char name[128], buf[MSG_SIZ];
+  char name[128];
 
-    snprintf(name, sizeof(name)/sizeof(name[0]), "%s%d%s", piece, squareSize, suffix);
-  if(appData.pieceDirectory[0]) {
-    HBITMAP res;
-    snprintf(buf, MSG_SIZ, "%s\\%s.bmp", appData.pieceDirectory, name);
-    res = LoadImage( 0, buf, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE );
-    if(res) return res;
-  }
+  sprintf(name, "%s%d%s", piece, squareSize, suffix);
   if (gameInfo.event &&
       strcmp(gameInfo.event, "Easter Egg Hunt") == 0 &&
       strcmp(name, "k80s") == 0) {
-    safeStrCpy(name, "tim", sizeof(name)/sizeof(name[0]) );
+    strcpy(name, "tim");
   }
   return LoadBitmap(hinst, name);
 }
@@ -2146,7 +1993,7 @@ InsertInPalette(COLORREF color)
   LPPALETTEENTRY pe = &(pLogPal->palPalEntry[pLogPal->palNumEntries]);
 
   if (pLogPal->palNumEntries++ >= PALETTESIZE) {
-    DisplayFatalError(_("Too many colors"), 0, 1);
+    DisplayFatalError("Too many colors", 0, 1);
     pLogPal->palNumEntries--;
     return;
   }
@@ -2187,31 +2034,18 @@ InitDrawingColors()
   hPal = CreatePalette((LPLOGPALETTE) pLogPal);
 
   lightSquareBrush = CreateSolidBrush(lightSquareColor);
-  blackSquareBrush = CreateSolidBrush(blackPieceColor);
   darkSquareBrush = CreateSolidBrush(darkSquareColor);
   whitePieceBrush = CreateSolidBrush(whitePieceColor);
   blackPieceBrush = CreateSolidBrush(blackPieceColor);
   iconBkgndBrush = CreateSolidBrush(GetSysColor(COLOR_BACKGROUND));
-  explodeBrush = CreateSolidBrush(highlightSquareColor); // [HGM] atomic
-  markerBrush = CreateSolidBrush(premoveHighlightColor); // [HGM] markers
-  /* [AS] Force rendering of the font-based pieces */
-  if( fontBitmapSquareSize > 0 ) {
-    fontBitmapSquareSize = 0;
-  }
 }
 
 
 int
-BoardWidth(int boardSize, int n)
-{ /* [HGM] argument n added to allow different width and height */
-  int lineGap = sizeInfo[boardSize].lineGap;
-
-  if( appData.overrideLineGap >= 0 && appData.overrideLineGap <= 5 ) {
-      lineGap = appData.overrideLineGap;
-  }
-
-  return (n + 1) * lineGap +
-          n * sizeInfo[boardSize].squareSize;
+BoardWidth(int boardSize)
+{
+  return (BOARD_SIZE + 1) * sizeInfo[boardSize].lineGap +
+ 	  BOARD_SIZE * sizeInfo[boardSize].squareSize;
 }
 
 /* Respond to board resize by dragging edge */
@@ -2223,10 +2057,9 @@ ResizeBoard(int newSizeX, int newSizeY, int flags)
   if (IsIconic(hwndMain)) return;
   if (recurse > 0) return;
   recurse++;
-  while (newSize > 0) {
-	InitDrawingSizes(newSize+1000, 0); // [HGM] kludge to update sizeInfo without visible effects
-	if(newSizeX >= sizeInfo[newSize].cliWidth &&
-	   newSizeY >= sizeInfo[newSize].cliHeight) break;
+  while (newSize > 0 &&
+	 (newSizeX < sizeInfo[newSize].cliWidth ||
+	  newSizeY < sizeInfo[newSize].cliHeight)) {
     newSize--;
   } 
   boardSize = newSize;
@@ -2235,12 +2068,11 @@ ResizeBoard(int newSizeX, int newSizeY, int flags)
 }
 
 
-extern Boolean twoBoards, partnerUp; // [HGM] dual
 
 VOID
 InitDrawingSizes(BoardSize boardSize, int flags)
 {
-  int i, boardWidth, boardHeight; /* [HGM] height treated separately */
+  int i, boardWidth;
   ChessSquare piece;
   static int oldBoardSize = -1, oldTinyLayout = 0;
   HDC hdc;
@@ -2249,50 +2081,17 @@ InitDrawingSizes(BoardSize boardSize, int flags)
   char buf[MSG_SIZ];
   char *str;
   HMENU hmenu = GetMenu(hwndMain);
-  RECT crect, wrect, oldRect;
+  RECT crect, wrect;
   int offby;
   LOGBRUSH logbrush;
-  VariantClass v = gameInfo.variant;
-
-  int suppressVisibleEffects = 0; // [HGM] kludge to request updating sizeInfo only
-  if((int)boardSize >= 1000 ) { boardSize -= 1000; suppressVisibleEffects = 1; }
-
-  /* [HGM] call with -2 uses old size (for if nr of files, ranks changes) */
-  if(boardSize == (BoardSize)(-2) ) boardSize = oldBoardSize;
-  oldBoardSize = boardSize;
-
-  if(boardSize != SizeMiddling && boardSize != SizePetite && boardSize != SizeBulky && !appData.useFont)
-  { // correct board size to one where built-in pieces exist
-    if((v == VariantCapablanca || v == VariantGothic || v == VariantGrand || v == VariantCapaRandom || v == VariantJanus || v == VariantSuper)
-       && (boardSize < SizePetite || boardSize > SizeBulky) // Archbishop and Chancellor available in entire middle range
-      || (v == VariantShogi && boardSize != SizeModerate)   // Japanese-style Shogi
-      ||  v == VariantKnightmate || v == VariantSChess || v == VariantXiangqi || v == VariantSpartan
-      ||  v == VariantShatranj || v == VariantMakruk || v == VariantGreat || v == VariantFairy ) {
-      if(boardSize < SizeMediocre) boardSize = SizePetite; else
-      if(boardSize > SizeModerate) boardSize = SizeBulky;  else
-                                   boardSize = SizeMiddling;
-    }
-  }
-  if(!appData.useFont && boardSize == SizePetite && (v == VariantShogi || v == VariantKnightmate)) boardSize = SizeMiddling; // no Unicorn in Petite
-
-  oldRect.left = wpMain.x; //[HGM] placement: remember previous window params
-  oldRect.top = wpMain.y;
-  oldRect.right = wpMain.x + wpMain.width;
-  oldRect.bottom = wpMain.y + wpMain.height;
 
   tinyLayout = sizeInfo[boardSize].tinyLayout;
   smallLayout = sizeInfo[boardSize].smallLayout;
   squareSize = sizeInfo[boardSize].squareSize;
   lineGap = sizeInfo[boardSize].lineGap;
-  minorSize = 0; /* [HGM] Kludge to see if demagnified pieces need to be shifted  */
-  border = appData.useBorder && appData.border[0] ? squareSize/2 : 0;
-
-  if( appData.overrideLineGap >= 0 && appData.overrideLineGap <= 5 ) {
-      lineGap = appData.overrideLineGap;
-  }
 
   if (tinyLayout != oldTinyLayout) {
-    long style = GetWindowLongPtr(hwndMain, GWL_STYLE);
+    long style = GetWindowLong(hwndMain, GWL_STYLE);
     if (tinyLayout) {
       style &= ~WS_SYSMENU;
       InsertMenu(hmenu, IDM_Exit, MF_BYCOMMAND, IDM_Minimize,
@@ -2301,137 +2100,96 @@ InitDrawingSizes(BoardSize boardSize, int flags)
       style |= WS_SYSMENU;
       RemoveMenu(hmenu, IDM_Minimize, MF_BYCOMMAND);
     }
-    SetWindowLongPtr(hwndMain, GWL_STYLE, style);
+    SetWindowLong(hwndMain, GWL_STYLE, style);
 
     for (i=0; menuBarText[tinyLayout][i]; i++) {
       ModifyMenu(hmenu, i, MF_STRING|MF_BYPOSITION|MF_POPUP, 
-	(UINT)GetSubMenu(hmenu, i), T_(menuBarText[tinyLayout][i]));
+	(UINT)GetSubMenu(hmenu, i), menuBarText[tinyLayout][i]);
     }
     DrawMenuBar(hwndMain);
   }
 
-  boardWidth  = BoardWidth(boardSize, BOARD_WIDTH) + 2*border;
-  boardHeight = BoardWidth(boardSize, BOARD_HEIGHT) + 2*border;
+  boardWidth = BoardWidth(boardSize);
 
   /* Get text area sizes */
   hdc = GetDC(hwndMain);
   if (appData.clockMode) {
-    snprintf(buf, MSG_SIZ, _("White: %s"), TimeString(23*60*60*1000L));
+    sprintf(buf, "White: %s", TimeString(23*60*60*1000L));
   } else {
-    snprintf(buf, MSG_SIZ, _("White"));
+    sprintf(buf, "White");
   }
   oldFont = SelectObject(hdc, font[boardSize][CLOCK_FONT]->hf);
   GetTextExtentPoint(hdc, buf, strlen(buf), &clockSize);
   SelectObject(hdc, font[boardSize][MESSAGE_FONT]->hf);
-  str = _("We only care about the height here");
+  str = "We only care about the height here";
   GetTextExtentPoint(hdc, str, strlen(str), &messageSize);
   SelectObject(hdc, oldFont);
   ReleaseDC(hwndMain, hdc);
 
   /* Compute where everything goes */
-  if((first.programLogo || second.programLogo) && !tinyLayout) {
-        /* [HGM] logo: if either logo is on, reserve space for it */
-	logoHeight =  2*clockSize.cy;
-	leftLogoRect.left   = OUTER_MARGIN;
-	leftLogoRect.right  = leftLogoRect.left + 4*clockSize.cy;
-	leftLogoRect.top    = OUTER_MARGIN;
-	leftLogoRect.bottom = OUTER_MARGIN + logoHeight;
+  whiteRect.left = OUTER_MARGIN;
+  whiteRect.right = whiteRect.left + boardWidth/2 - INNER_MARGIN/2;
+  whiteRect.top = OUTER_MARGIN;
+  whiteRect.bottom = whiteRect.top + clockSize.cy;
 
-	rightLogoRect.right  = OUTER_MARGIN + boardWidth;
-	rightLogoRect.left   = rightLogoRect.right - 4*clockSize.cy;
-	rightLogoRect.top    = OUTER_MARGIN;
-	rightLogoRect.bottom = OUTER_MARGIN + logoHeight;
+  blackRect.left = whiteRect.right + INNER_MARGIN;
+  blackRect.right = blackRect.left + boardWidth/2 - 1;
+  blackRect.top = whiteRect.top;
+  blackRect.bottom = whiteRect.bottom;
 
-
-    whiteRect.left = leftLogoRect.right;
-    whiteRect.right = OUTER_MARGIN + boardWidth/2 - INNER_MARGIN/2;
-    whiteRect.top = OUTER_MARGIN;
-    whiteRect.bottom = whiteRect.top + logoHeight;
-
-    blackRect.right = rightLogoRect.left;
-    blackRect.left = whiteRect.right + INNER_MARGIN;
-    blackRect.top = whiteRect.top;
-    blackRect.bottom = whiteRect.bottom;
-  } else {
-    whiteRect.left = OUTER_MARGIN;
-    whiteRect.right = whiteRect.left + boardWidth/2 - INNER_MARGIN/2;
-    whiteRect.top = OUTER_MARGIN;
-    whiteRect.bottom = whiteRect.top + clockSize.cy;
-
-    blackRect.left = whiteRect.right + INNER_MARGIN;
-    blackRect.right = blackRect.left + boardWidth/2 - 1;
-    blackRect.top = whiteRect.top;
-    blackRect.bottom = whiteRect.bottom;
-
-    logoHeight = 0; // [HGM] logo: suppress logo after change to tiny layout!
-  }
-
-  messageRect.left = OUTER_MARGIN + MESSAGE_LINE_LEFTMARGIN;
+  messageRect.left = whiteRect.left + MESSAGE_LINE_LEFTMARGIN;
   if (appData.showButtonBar) {
-    messageRect.right = OUTER_MARGIN + boardWidth         // [HGM] logo: expressed independent of clock placement
+    messageRect.right = blackRect.right
       - N_BUTTONS*BUTTON_WIDTH - MESSAGE_LINE_LEFTMARGIN;
   } else {
-    messageRect.right = OUTER_MARGIN + boardWidth;
+    messageRect.right = blackRect.right;
   }
   messageRect.top = whiteRect.bottom + INNER_MARGIN;
   messageRect.bottom = messageRect.top + messageSize.cy;
 
-  boardRect.left = OUTER_MARGIN;
+  boardRect.left = whiteRect.left;
   boardRect.right = boardRect.left + boardWidth;
   boardRect.top = messageRect.bottom + INNER_MARGIN;
-  boardRect.bottom = boardRect.top + boardHeight;
+  boardRect.bottom = boardRect.top + boardWidth;
 
   sizeInfo[boardSize].cliWidth = boardRect.right + OUTER_MARGIN;
   sizeInfo[boardSize].cliHeight = boardRect.bottom + OUTER_MARGIN;
-  oldTinyLayout = tinyLayout;
-  winW = 2 * GetSystemMetrics(SM_CXFRAME) + boardRect.right + OUTER_MARGIN;
-  winH = 2 * GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYMENU) +
+  winWidth = 2 * GetSystemMetrics(SM_CXFRAME) + boardRect.right + OUTER_MARGIN;
+  winHeight = 2 * GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CYMENU) +
     GetSystemMetrics(SM_CYCAPTION) + boardRect.bottom + OUTER_MARGIN;
-  winW *= 1 + twoBoards;
-  if(suppressVisibleEffects) return; // [HGM] when called for filling sizeInfo only
-  wpMain.width = winW;  // [HGM] placement: set through temporary which can used by initial sizing choice
-  wpMain.height = winH; //       without disturbing window attachments
   GetWindowRect(hwndMain, &wrect);
-  SetWindowPos(hwndMain, NULL, 0, 0, wpMain.width, wpMain.height,
+  SetWindowPos(hwndMain, NULL, 0, 0, winWidth, winHeight,
 	       SWP_NOCOPYBITS|SWP_NOZORDER|SWP_NOMOVE);
-
-  // [HGM] placement: let attached windows follow size change.
-  ReattachAfterSize( &oldRect, wpMain.width, wpMain.height, moveHistoryDialog, &wpMoveHistory );
-  ReattachAfterSize( &oldRect, wpMain.width, wpMain.height, evalGraphDialog, &wpEvalGraph );
-  ReattachAfterSize( &oldRect, wpMain.width, wpMain.height, engineOutputDialog, &wpEngineOutput );
-  ReattachAfterSize( &oldRect, wpMain.width, wpMain.height, gameListDialog, &wpGameList );
-  ReattachAfterSize( &oldRect, wpMain.width, wpMain.height, hwndConsole, &wpConsole );
-
   /* compensate if menu bar wrapped */
   GetClientRect(hwndMain, &crect);
   offby = boardRect.bottom + OUTER_MARGIN - crect.bottom;
-  wpMain.height += offby;
+  winHeight += offby;
   switch (flags) {
   case WMSZ_TOPLEFT:
     SetWindowPos(hwndMain, NULL, 
-                 wrect.right - wpMain.width, wrect.bottom - wpMain.height, 
-                 wpMain.width, wpMain.height, SWP_NOCOPYBITS|SWP_NOZORDER);
+                 wrect.right - winWidth, wrect.bottom - winHeight, 
+                 winWidth, winHeight, SWP_NOCOPYBITS|SWP_NOZORDER);
     break;
 
   case WMSZ_TOPRIGHT:
   case WMSZ_TOP:
     SetWindowPos(hwndMain, NULL, 
-                 wrect.left, wrect.bottom - wpMain.height, 
-                 wpMain.width, wpMain.height, SWP_NOCOPYBITS|SWP_NOZORDER);
+                 wrect.left, wrect.bottom - winHeight, 
+                 winWidth, winHeight, SWP_NOCOPYBITS|SWP_NOZORDER);
     break;
 
   case WMSZ_BOTTOMLEFT:
   case WMSZ_LEFT:
     SetWindowPos(hwndMain, NULL, 
-                 wrect.right - wpMain.width, wrect.top, 
-                 wpMain.width, wpMain.height, SWP_NOCOPYBITS|SWP_NOZORDER);
+                 wrect.right - winWidth, wrect.top, 
+                 winWidth, winHeight, SWP_NOCOPYBITS|SWP_NOZORDER);
     break;
 
   case WMSZ_BOTTOMRIGHT:
   case WMSZ_BOTTOM:
   case WMSZ_RIGHT:
   default:
-    SetWindowPos(hwndMain, NULL, 0, 0, wpMain.width, wpMain.height,
+    SetWindowPos(hwndMain, NULL, 0, 0, winWidth, winHeight,
                SWP_NOCOPYBITS|SWP_NOZORDER|SWP_NOMOVE);
     break;
   }
@@ -2449,7 +2207,7 @@ InitDrawingSizes(BoardSize boardSize, int flags)
 		     boardRect.right - BUTTON_WIDTH*(N_BUTTONS-i),
 		     messageRect.top, BUTTON_WIDTH, messageSize.cy, hwndMain,
 		     (HMENU) buttonDesc[i].id,
-		     (HINSTANCE) GetWindowLongPtr(hwndMain, GWLP_HINSTANCE), NULL);
+		     (HINSTANCE) GetWindowLong(hwndMain, GWL_HINSTANCE), NULL);
       if (tinyLayout) {
 	SendMessage(buttonDesc[i].hwnd, WM_SETFONT, 
 		    (WPARAM)font[boardSize][MESSAGE_FONT]->hf,
@@ -2458,7 +2216,7 @@ InitDrawingSizes(BoardSize boardSize, int flags)
       if (buttonDesc[i].id == IDM_Pause)
 	hwndPause = buttonDesc[i].hwnd;
       buttonDesc[i].wndproc = (WNDPROC)
-	SetWindowLongPtr(buttonDesc[i].hwnd, GWLP_WNDPROC, (LONG_PTR) ButtonProc);
+	SetWindowLong(buttonDesc[i].hwnd, GWL_WNDPROC, (LONG) ButtonProc);
     }
   }
   if (gridPen != NULL) DeleteObject(gridPen);
@@ -2480,250 +2238,55 @@ InitDrawingSizes(BoardSize boardSize, int flags)
       ExtCreatePen(PS_GEOMETRIC|PS_SOLID|PS_ENDCAP_FLAT|PS_JOIN_MITER,
                    lineGap, &logbrush, 0, NULL);
 
-    /* [HGM] Loop had to be split in part for vert. and hor. lines */
-    for (i = 0; i < BOARD_HEIGHT + 1; i++) {
-      gridEndpoints[i*2].x = boardRect.left + lineGap / 2 + border;
+    for (i = 0; i < BOARD_SIZE + 1; i++) {
+      gridEndpoints[i*2].x = boardRect.left + lineGap / 2;
+      gridEndpoints[i*2 + BOARD_SIZE*2 + 2].y = boardRect.top + lineGap / 2;
       gridEndpoints[i*2].y = gridEndpoints[i*2 + 1].y =
-	boardRect.top + lineGap / 2 + (i * (squareSize + lineGap)) + border;
+	boardRect.top + lineGap / 2 + (i * (squareSize + lineGap));
       gridEndpoints[i*2 + 1].x = boardRect.left + lineGap / 2 +
-        BOARD_WIDTH * (squareSize + lineGap) + border;
-      gridVertexCounts[i*2] = gridVertexCounts[i*2 + 1] = 2;
-    }
-    for (i = 0; i < BOARD_WIDTH + 1; i++) {
-      gridEndpoints[i*2 + BOARD_HEIGHT*2 + 2].y = boardRect.top + lineGap / 2 + border;
-      gridEndpoints[i*2 + BOARD_HEIGHT*2 + 2].x =
-        gridEndpoints[i*2 + 1 + BOARD_HEIGHT*2 + 2].x = boardRect.left +
-	lineGap / 2 + (i * (squareSize + lineGap)) + border;
-      gridEndpoints[i*2 + 1 + BOARD_HEIGHT*2 + 2].y =
-        boardRect.top + BOARD_HEIGHT * (squareSize + lineGap) + border;
+	BOARD_SIZE * (squareSize + lineGap);
+      gridEndpoints[i*2 + BOARD_SIZE*2 + 2].x =
+	gridEndpoints[i*2 + 1 + BOARD_SIZE*2 + 2].x = boardRect.left +
+	lineGap / 2 + (i * (squareSize + lineGap));
+      gridEndpoints[i*2 + 1 + BOARD_SIZE*2 + 2].y =
+	boardRect.top + BOARD_SIZE * (squareSize + lineGap);
       gridVertexCounts[i*2] = gridVertexCounts[i*2 + 1] = 2;
     }
   }
 
-  /* [HGM] Licensing requirement */
-#ifdef GOTHIC
-  if(gameInfo.variant == VariantGothic) GothicPopUp( GOTHIC, VariantGothic); else
-#endif
-#ifdef FALCON
-  if(gameInfo.variant == VariantFalcon) GothicPopUp( FALCON, VariantFalcon); else
-#endif
-  GothicPopUp( "", VariantNormal);
-
-
-/*  if (boardSize == oldBoardSize) return; [HGM] variant might have changed */
+  if (boardSize == oldBoardSize) return;
+  oldBoardSize = boardSize;
+  oldTinyLayout = tinyLayout;
 
   /* Load piece bitmaps for this board size */
   for (i=0; i<=2; i++) {
     for (piece = WhitePawn;
-         (int) piece < (int) BlackPawn;
+	 (int) piece <= (int) WhiteKing;
 	 piece = (ChessSquare) ((int) piece + 1)) {
       if (pieceBitmap[i][piece] != NULL)
 	DeleteObject(pieceBitmap[i][piece]);
     }
   }
 
-  fontBitmapSquareSize = 0; /* [HGM] render: make sure pieces will be recreated, as we might need others now */
-  // Orthodox Chess pieces
   pieceBitmap[0][WhitePawn] = DoLoadBitmap(hInst, "p", squareSize, "s");
   pieceBitmap[0][WhiteKnight] = DoLoadBitmap(hInst, "n", squareSize, "s");
   pieceBitmap[0][WhiteBishop] = DoLoadBitmap(hInst, "b", squareSize, "s");
   pieceBitmap[0][WhiteRook] = DoLoadBitmap(hInst, "r", squareSize, "s");
+  pieceBitmap[0][WhiteQueen] = DoLoadBitmap(hInst, "q", squareSize, "s");
   pieceBitmap[0][WhiteKing] = DoLoadBitmap(hInst, "k", squareSize, "s");
   pieceBitmap[1][WhitePawn] = DoLoadBitmap(hInst, "p", squareSize, "o");
   pieceBitmap[1][WhiteKnight] = DoLoadBitmap(hInst, "n", squareSize, "o");
   pieceBitmap[1][WhiteBishop] = DoLoadBitmap(hInst, "b", squareSize, "o");
   pieceBitmap[1][WhiteRook] = DoLoadBitmap(hInst, "r", squareSize, "o");
+  pieceBitmap[1][WhiteQueen] = DoLoadBitmap(hInst, "q", squareSize, "o");
   pieceBitmap[1][WhiteKing] = DoLoadBitmap(hInst, "k", squareSize, "o");
   pieceBitmap[2][WhitePawn] = DoLoadBitmap(hInst, "p", squareSize, "w");
   pieceBitmap[2][WhiteKnight] = DoLoadBitmap(hInst, "n", squareSize, "w");
   pieceBitmap[2][WhiteBishop] = DoLoadBitmap(hInst, "b", squareSize, "w");
   pieceBitmap[2][WhiteRook] = DoLoadBitmap(hInst, "r", squareSize, "w");
+  pieceBitmap[2][WhiteQueen] = DoLoadBitmap(hInst, "q", squareSize, "w");
   pieceBitmap[2][WhiteKing] = DoLoadBitmap(hInst, "k", squareSize, "w");
-  if( gameInfo.variant == VariantShogi && squareSize <= 72 && squareSize >= 33) {
-    // in Shogi, Hijack the unused Queen for Lance
-    pieceBitmap[0][WhiteQueen] = DoLoadBitmap(hInst, "l", squareSize, "s");
-    pieceBitmap[1][WhiteQueen] = DoLoadBitmap(hInst, "l", squareSize, "o");
-    pieceBitmap[2][WhiteQueen] = DoLoadBitmap(hInst, "l", squareSize, "w");
-  } else {
-    pieceBitmap[0][WhiteQueen] = DoLoadBitmap(hInst, "q", squareSize, "s");
-    pieceBitmap[1][WhiteQueen] = DoLoadBitmap(hInst, "q", squareSize, "o");
-    pieceBitmap[2][WhiteQueen] = DoLoadBitmap(hInst, "q", squareSize, "w");
-  }
 
-  if(squareSize <= 72 && squareSize >= 33) { 
-    /* A & C are available in most sizes now */
-    if(squareSize != 49 && squareSize != 72 && squareSize != 33) { // Vortex-like
-      pieceBitmap[0][WhiteAngel] = DoLoadBitmap(hInst, "a", squareSize, "s");
-      pieceBitmap[1][WhiteAngel] = DoLoadBitmap(hInst, "a", squareSize, "o");
-      pieceBitmap[2][WhiteAngel] = DoLoadBitmap(hInst, "a", squareSize, "w");
-      pieceBitmap[0][WhiteSilver] = DoLoadBitmap(hInst, "cv", squareSize, "s");
-      pieceBitmap[1][WhiteSilver] = DoLoadBitmap(hInst, "cv", squareSize, "o");
-      pieceBitmap[2][WhiteSilver] = DoLoadBitmap(hInst, "cv", squareSize, "w");
-      pieceBitmap[0][WhiteCobra] = DoLoadBitmap(hInst, "cv", squareSize, "s");
-      pieceBitmap[1][WhiteCobra] = DoLoadBitmap(hInst, "cv", squareSize, "o");
-      pieceBitmap[2][WhiteCobra] = DoLoadBitmap(hInst, "cv", squareSize, "w");
-      pieceBitmap[0][WhiteLance] = DoLoadBitmap(hInst, "l", squareSize, "s");
-      pieceBitmap[1][WhiteLance] = DoLoadBitmap(hInst, "l", squareSize, "o");
-      pieceBitmap[2][WhiteLance] = DoLoadBitmap(hInst, "l", squareSize, "w");
-    } else { // Smirf-like
-      if(gameInfo.variant == VariantSChess) {
-        pieceBitmap[0][WhiteAngel] = DoLoadBitmap(hInst, "v", squareSize, "s");
-        pieceBitmap[1][WhiteAngel] = DoLoadBitmap(hInst, "v", squareSize, "o");
-        pieceBitmap[2][WhiteAngel] = DoLoadBitmap(hInst, "v", squareSize, "w");
-      } else {
-        pieceBitmap[0][WhiteAngel] = DoLoadBitmap(hInst, "aa", squareSize, "s");
-        pieceBitmap[1][WhiteAngel] = DoLoadBitmap(hInst, "aa", squareSize, "o");
-        pieceBitmap[2][WhiteAngel] = DoLoadBitmap(hInst, "aa", squareSize, "w");
-      }
-    }
-    if(gameInfo.variant == VariantGothic) { // Vortex-like
-      pieceBitmap[0][WhiteMarshall] = DoLoadBitmap(hInst, "cv", squareSize, "s");
-      pieceBitmap[1][WhiteMarshall] = DoLoadBitmap(hInst, "cv", squareSize, "o");
-      pieceBitmap[2][WhiteMarshall] = DoLoadBitmap(hInst, "cv", squareSize, "w");
-    } else if(gameInfo.variant == VariantSChess && (squareSize == 49 || squareSize == 72)) {
-      pieceBitmap[0][WhiteMarshall] = DoLoadBitmap(hInst, "e", squareSize, "s");
-      pieceBitmap[1][WhiteMarshall] = DoLoadBitmap(hInst, "e", squareSize, "o");
-      pieceBitmap[2][WhiteMarshall] = DoLoadBitmap(hInst, "e", squareSize, "w");
-    } else { // WinBoard standard
-      pieceBitmap[0][WhiteMarshall] = DoLoadBitmap(hInst, "c", squareSize, "s");
-      pieceBitmap[1][WhiteMarshall] = DoLoadBitmap(hInst, "c", squareSize, "o");
-      pieceBitmap[2][WhiteMarshall] = DoLoadBitmap(hInst, "c", squareSize, "w");
-    }
-  }
-
-
-  if(squareSize==72 || squareSize==49 || squareSize==33) { /* experiment with some home-made bitmaps */
-    pieceBitmap[0][WhiteFerz] = DoLoadBitmap(hInst, "f", squareSize, "s");
-    pieceBitmap[1][WhiteFerz] = DoLoadBitmap(hInst, "f", squareSize, "o");
-    pieceBitmap[2][WhiteFerz] = DoLoadBitmap(hInst, "f", squareSize, "w");
-    pieceBitmap[0][WhiteWazir] = DoLoadBitmap(hInst, "w", squareSize, "s");
-    pieceBitmap[1][WhiteWazir] = DoLoadBitmap(hInst, "w", squareSize, "o");
-    pieceBitmap[2][WhiteWazir] = DoLoadBitmap(hInst, "w", squareSize, "w");
-    pieceBitmap[0][WhiteAlfil] = DoLoadBitmap(hInst, "e", squareSize, "s");
-    pieceBitmap[1][WhiteAlfil] = DoLoadBitmap(hInst, "e", squareSize, "o");
-    pieceBitmap[2][WhiteAlfil] = DoLoadBitmap(hInst, "e", squareSize, "w");
-    pieceBitmap[0][WhiteMan] = DoLoadBitmap(hInst, "m", squareSize, "s");
-    pieceBitmap[1][WhiteMan] = DoLoadBitmap(hInst, "m", squareSize, "o");
-    pieceBitmap[2][WhiteMan] = DoLoadBitmap(hInst, "m", squareSize, "w");
-    pieceBitmap[0][WhiteCardinal] = DoLoadBitmap(hInst, "a", squareSize, "s");
-    pieceBitmap[1][WhiteCardinal] = DoLoadBitmap(hInst, "a", squareSize, "o");
-    pieceBitmap[2][WhiteCardinal] = DoLoadBitmap(hInst, "a", squareSize, "w");
-    pieceBitmap[0][WhiteDragon] = DoLoadBitmap(hInst, "dk", squareSize, "s");
-    pieceBitmap[1][WhiteDragon] = DoLoadBitmap(hInst, "dk", squareSize, "o");
-    pieceBitmap[2][WhiteDragon] = DoLoadBitmap(hInst, "dk", squareSize, "w");
-    pieceBitmap[0][WhiteFalcon] = DoLoadBitmap(hInst, "v", squareSize, "s");
-    pieceBitmap[1][WhiteFalcon] = DoLoadBitmap(hInst, "v", squareSize, "o");
-    pieceBitmap[2][WhiteFalcon] = DoLoadBitmap(hInst, "v", squareSize, "w");
-    pieceBitmap[0][WhiteCobra] = DoLoadBitmap(hInst, "s", squareSize, "s");
-    pieceBitmap[1][WhiteCobra] = DoLoadBitmap(hInst, "s", squareSize, "o");
-    pieceBitmap[2][WhiteCobra] = DoLoadBitmap(hInst, "s", squareSize, "w");
-    pieceBitmap[0][WhiteLance] = DoLoadBitmap(hInst, "l", squareSize, "s");
-    pieceBitmap[1][WhiteLance] = DoLoadBitmap(hInst, "l", squareSize, "o");
-    pieceBitmap[2][WhiteLance] = DoLoadBitmap(hInst, "l", squareSize, "w");
-    pieceBitmap[0][WhiteUnicorn] = DoLoadBitmap(hInst, "u", squareSize, "s");
-    pieceBitmap[1][WhiteUnicorn] = DoLoadBitmap(hInst, "u", squareSize, "o");
-    pieceBitmap[2][WhiteUnicorn] = DoLoadBitmap(hInst, "u", squareSize, "w");
-
-    if(gameInfo.variant == VariantShogi) { /* promoted Gold represemtations */
-      pieceBitmap[0][WhiteCannon] = DoLoadBitmap(hInst, "wp", squareSize, "s");
-      pieceBitmap[1][WhiteCannon] = DoLoadBitmap(hInst, "wp", squareSize, "o");
-      pieceBitmap[2][WhiteCannon] = DoLoadBitmap(hInst, "w", squareSize, "w");
-      pieceBitmap[0][WhiteNightrider] = DoLoadBitmap(hInst, "wn", squareSize, "s");
-      pieceBitmap[1][WhiteNightrider] = DoLoadBitmap(hInst, "wn", squareSize, "o");
-      pieceBitmap[2][WhiteNightrider] = DoLoadBitmap(hInst, "w", squareSize, "w");
-      pieceBitmap[0][WhiteSilver] = DoLoadBitmap(hInst, "ws", squareSize, "s");
-      pieceBitmap[1][WhiteSilver] = DoLoadBitmap(hInst, "ws", squareSize, "o");
-      pieceBitmap[2][WhiteSilver] = DoLoadBitmap(hInst, "w", squareSize, "w");
-      pieceBitmap[0][WhiteGrasshopper] = DoLoadBitmap(hInst, "wl", squareSize, "s");
-      pieceBitmap[1][WhiteGrasshopper] = DoLoadBitmap(hInst, "wl", squareSize, "o");
-      pieceBitmap[2][WhiteGrasshopper] = DoLoadBitmap(hInst, "w", squareSize, "w");
-    } else {
-      pieceBitmap[0][WhiteCannon] = DoLoadBitmap(hInst, "o", squareSize, "s");
-      pieceBitmap[1][WhiteCannon] = DoLoadBitmap(hInst, "o", squareSize, "o");
-      pieceBitmap[2][WhiteCannon] = DoLoadBitmap(hInst, "o", squareSize, "w");
-      pieceBitmap[0][WhiteNightrider] = DoLoadBitmap(hInst, "h", squareSize, "s");
-      pieceBitmap[1][WhiteNightrider] = DoLoadBitmap(hInst, "h", squareSize, "o");
-      pieceBitmap[2][WhiteNightrider] = DoLoadBitmap(hInst, "h", squareSize, "w");
-      pieceBitmap[0][WhiteSilver] = DoLoadBitmap(hInst, "cv", squareSize, "s");
-      pieceBitmap[1][WhiteSilver] = DoLoadBitmap(hInst, "cv", squareSize, "o");
-      pieceBitmap[2][WhiteSilver] = DoLoadBitmap(hInst, "cv", squareSize, "w");
-      pieceBitmap[0][WhiteGrasshopper] = DoLoadBitmap(hInst, "g", squareSize, "s");
-      pieceBitmap[1][WhiteGrasshopper] = DoLoadBitmap(hInst, "g", squareSize, "o");
-      pieceBitmap[2][WhiteGrasshopper] = DoLoadBitmap(hInst, "g", squareSize, "w");
-    }
-
-  } else { /* other size, no special bitmaps available. Use smaller symbols */
-    if((int)boardSize < 2) minorSize = sizeInfo[0].squareSize;
-    else  minorSize = sizeInfo[(int)boardSize - 2].squareSize;
-    pieceBitmap[0][WhiteNightrider] = DoLoadBitmap(hInst, "n", minorSize, "s");
-    pieceBitmap[1][WhiteNightrider] = DoLoadBitmap(hInst, "n", minorSize, "o");
-    pieceBitmap[2][WhiteNightrider] = DoLoadBitmap(hInst, "n", minorSize, "w");
-    pieceBitmap[0][WhiteCardinal]   = DoLoadBitmap(hInst, "b", minorSize, "s");
-    pieceBitmap[1][WhiteCardinal]   = DoLoadBitmap(hInst, "b", minorSize, "o");
-    pieceBitmap[2][WhiteCardinal]   = DoLoadBitmap(hInst, "b", minorSize, "w");
-    pieceBitmap[0][WhiteDragon]   = DoLoadBitmap(hInst, "r", minorSize, "s");
-    pieceBitmap[1][WhiteDragon]   = DoLoadBitmap(hInst, "r", minorSize, "o");
-    pieceBitmap[2][WhiteDragon]   = DoLoadBitmap(hInst, "r", minorSize, "w");
-    pieceBitmap[0][WhiteGrasshopper] = DoLoadBitmap(hInst, "q", minorSize, "s");
-    pieceBitmap[1][WhiteGrasshopper] = DoLoadBitmap(hInst, "q", minorSize, "o");
-    pieceBitmap[2][WhiteGrasshopper] = DoLoadBitmap(hInst, "q", minorSize, "w");
-  }
-
-
-  if(gameInfo.variant == VariantShogi && squareSize == 58)
-  /* special Shogi support in this size */
-  { for (i=0; i<=2; i++) { /* replace all bitmaps */
-      for (piece = WhitePawn;
-           (int) piece < (int) BlackPawn;
-           piece = (ChessSquare) ((int) piece + 1)) {
-        if (pieceBitmap[i][piece] != NULL)
-          DeleteObject(pieceBitmap[i][piece]);
-      }
-    }
-  pieceBitmap[0][WhitePawn] = DoLoadBitmap(hInst, "sp", squareSize, "o");
-  pieceBitmap[0][WhiteKnight] = DoLoadBitmap(hInst, "sn", squareSize, "o");
-  pieceBitmap[0][WhiteBishop] = DoLoadBitmap(hInst, "sb", squareSize, "o");
-  pieceBitmap[0][WhiteRook] = DoLoadBitmap(hInst, "sr", squareSize, "o");
-  pieceBitmap[0][WhiteQueen] = DoLoadBitmap(hInst, "sl", squareSize, "o");
-  pieceBitmap[0][WhiteKing] = DoLoadBitmap(hInst, "sk", squareSize, "o");
-  pieceBitmap[0][WhiteFerz] = DoLoadBitmap(hInst, "sf", squareSize, "o");
-  pieceBitmap[0][WhiteWazir] = DoLoadBitmap(hInst, "sw", squareSize, "o");
-  pieceBitmap[0][WhiteCannon] = DoLoadBitmap(hInst, "su", squareSize, "o");
-  pieceBitmap[0][WhiteNightrider] = DoLoadBitmap(hInst, "sh", squareSize, "o");
-  pieceBitmap[0][WhiteCardinal] = DoLoadBitmap(hInst, "sa", squareSize, "o");
-  pieceBitmap[0][WhiteDragon] = DoLoadBitmap(hInst, "sc", squareSize, "o");
-  pieceBitmap[0][WhiteGrasshopper] = DoLoadBitmap(hInst, "sg", squareSize, "o");
-  pieceBitmap[0][WhiteSilver] = DoLoadBitmap(hInst, "ss", squareSize, "o");
-  pieceBitmap[1][WhitePawn] = DoLoadBitmap(hInst, "sp", squareSize, "o");
-  pieceBitmap[1][WhiteKnight] = DoLoadBitmap(hInst, "sn", squareSize, "o");
-  pieceBitmap[1][WhiteBishop] = DoLoadBitmap(hInst, "sb", squareSize, "o");
-  pieceBitmap[1][WhiteRook] = DoLoadBitmap(hInst, "sr", squareSize, "o");
-  pieceBitmap[1][WhiteQueen] = DoLoadBitmap(hInst, "sl", squareSize, "o");
-  pieceBitmap[1][WhiteKing] = DoLoadBitmap(hInst, "sk", squareSize, "o");
-  pieceBitmap[1][WhiteFerz] = DoLoadBitmap(hInst, "sf", squareSize, "o");
-  pieceBitmap[1][WhiteWazir] = DoLoadBitmap(hInst, "sw", squareSize, "o");
-  pieceBitmap[1][WhiteCannon] = DoLoadBitmap(hInst, "su", squareSize, "o");
-  pieceBitmap[1][WhiteNightrider] = DoLoadBitmap(hInst, "sh", squareSize, "o");
-  pieceBitmap[1][WhiteCardinal] = DoLoadBitmap(hInst, "sa", squareSize, "o");
-  pieceBitmap[1][WhiteDragon] = DoLoadBitmap(hInst, "sc", squareSize, "o");
-  pieceBitmap[1][WhiteGrasshopper] = DoLoadBitmap(hInst, "sg", squareSize, "o");
-  pieceBitmap[1][WhiteSilver] = DoLoadBitmap(hInst, "ss", squareSize, "o");
-  pieceBitmap[2][WhitePawn] = DoLoadBitmap(hInst, "sp", squareSize, "w");
-  pieceBitmap[2][WhiteKnight] = DoLoadBitmap(hInst, "sn", squareSize, "w");
-  pieceBitmap[2][WhiteBishop] = DoLoadBitmap(hInst, "sr", squareSize, "w");
-  pieceBitmap[2][WhiteRook] = DoLoadBitmap(hInst, "sr", squareSize, "w");
-  pieceBitmap[2][WhiteQueen] = DoLoadBitmap(hInst, "sl", squareSize, "w");
-  pieceBitmap[2][WhiteKing] = DoLoadBitmap(hInst, "sk", squareSize, "w");
-  pieceBitmap[2][WhiteFerz] = DoLoadBitmap(hInst, "sw", squareSize, "w");
-  pieceBitmap[2][WhiteWazir] = DoLoadBitmap(hInst, "sw", squareSize, "w");
-  pieceBitmap[2][WhiteCannon] = DoLoadBitmap(hInst, "sp", squareSize, "w");
-  pieceBitmap[2][WhiteNightrider] = DoLoadBitmap(hInst, "sn", squareSize, "w");
-  pieceBitmap[2][WhiteCardinal] = DoLoadBitmap(hInst, "sr", squareSize, "w");
-  pieceBitmap[2][WhiteDragon] = DoLoadBitmap(hInst, "sr", squareSize, "w");
-  pieceBitmap[2][WhiteGrasshopper] = DoLoadBitmap(hInst, "sl", squareSize, "w");
-  pieceBitmap[2][WhiteSilver] = DoLoadBitmap(hInst, "sw", squareSize, "w");
-  minorSize = 0;
-  }
 }
 
 HBITMAP
@@ -2748,19 +2311,19 @@ VOID
 SquareToPos(int row, int column, int * x, int * y)
 {
   if (flipView) {
-    *x = boardRect.left + lineGap + ((BOARD_WIDTH-1)-column) * (squareSize + lineGap) + border;
-    *y = boardRect.top + lineGap + row * (squareSize + lineGap) + border;
+    *x = boardRect.left + lineGap + ((BOARD_SIZE-1)-column) * (squareSize + lineGap);
+    *y = boardRect.top + lineGap + row * (squareSize + lineGap);
   } else {
-    *x = boardRect.left + lineGap + column * (squareSize + lineGap) + border;
-    *y = boardRect.top + lineGap + ((BOARD_HEIGHT-1)-row) * (squareSize + lineGap) + border;
+    *x = boardRect.left + lineGap + column * (squareSize + lineGap);
+    *y = boardRect.top + lineGap + ((BOARD_SIZE-1)-row) * (squareSize + lineGap);
   }
 }
 
 VOID
 DrawCoordsOnDC(HDC hdc)
 {
-  static char files[] = "0123456789012345678901221098765432109876543210";
-  static char ranks[] = "wvutsrqponmlkjihgfedcbaabcdefghijklmnopqrstuvw";
+  static char files[16] = {'1','2','3','4','5','6','7','8','8','7','6','5','4','3','2','1'};
+  static char ranks[16] = {'h','g','f','e','d','c','b','a','a','b','c','d','e','f','g','h'};
   char str[2] = { NULLCHAR, NULLCHAR };
   int oldMode, oldAlign, x, y, start, i;
   HFONT oldFont;
@@ -2769,7 +2332,7 @@ DrawCoordsOnDC(HDC hdc)
   if (!appData.showCoords)
     return;
 
-  start = flipView ? 1-(ONE!='1') : 45+(ONE!='1')-BOARD_HEIGHT;
+  start = flipView ? 0 : 8;
 
   oldBrush = SelectObject(hdc, GetStockObject(BLACK_BRUSH));
   oldMode = SetBkMode(hdc, (appData.monoMode ? OPAQUE : TRANSPARENT));
@@ -2777,27 +2340,17 @@ DrawCoordsOnDC(HDC hdc)
   oldFont = SelectObject(hdc, font[boardSize][COORD_FONT]->hf);
 
   y = boardRect.top + lineGap;
-  x = boardRect.left + lineGap + gameInfo.holdingsWidth*(squareSize + lineGap);
+  x = boardRect.left + lineGap;
 
-  if(border) {
-    SetTextAlign(hdc, TA_RIGHT|TA_TOP);
-    x += border - lineGap - 4; y += squareSize - 6;
-  } else
   SetTextAlign(hdc, TA_LEFT|TA_TOP);
-  for (i = 0; i < BOARD_HEIGHT; i++) {
+  for (i = 0; i < 8; i++) {
     str[0] = files[start + i];
-    ExtTextOut(hdc, x + 2 - (border ? gameInfo.holdingsWidth * (squareSize + lineGap) : 0), y + 1, 0, NULL, str, 1, NULL);
+    ExtTextOut(hdc, x + 2, y + 1, 0, NULL, str, 1, NULL);
     y += squareSize + lineGap;
   }
 
-  start = flipView ? 23-(BOARD_RGHT-BOARD_LEFT) : 23;
-
-  if(border) {
-    SetTextAlign(hdc, TA_LEFT|TA_TOP);
-    x += -border + 4; y += border - squareSize + 6;
-  } else
   SetTextAlign(hdc, TA_RIGHT|TA_BOTTOM);
-  for (i = 0; i < BOARD_RGHT - BOARD_LEFT; i++) {
+  for (i = 0; i < 8; i++) {
     str[0] = ranks[start + i];
     ExtTextOut(hdc, x + squareSize - 2, y - 1, 0, NULL, str, 1, NULL);
     x += squareSize + lineGap;
@@ -2816,7 +2369,7 @@ DrawGridOnDC(HDC hdc)
  
   if (lineGap != 0) {
     oldPen = SelectObject(hdc, gridPen);
-    PolyPolyline(hdc, gridEndpoints, gridVertexCounts, BOARD_WIDTH+BOARD_HEIGHT + 2);
+    PolyPolyline(hdc, gridEndpoints, gridVertexCounts, BOARD_SIZE*2 + 2);
     SelectObject(hdc, oldPen);
   }
 }
@@ -2832,14 +2385,14 @@ DrawHighlightOnDC(HDC hdc, BOOLEAN on, int x, int y, int pen)
   if (lineGap == 0) return;
   if (flipView) {
     x1 = boardRect.left +
-      lineGap/2 + ((BOARD_WIDTH-1)-x) * (squareSize + lineGap) + border;
+      lineGap/2 + ((BOARD_SIZE-1)-x) * (squareSize + lineGap);
     y1 = boardRect.top +
-      lineGap/2 + y * (squareSize + lineGap) + border;
+      lineGap/2 + y * (squareSize + lineGap);
   } else {
     x1 = boardRect.left +
-      lineGap/2 + x * (squareSize + lineGap) + border;
+      lineGap/2 + x * (squareSize + lineGap);
     y1 = boardRect.top +
-      lineGap/2 + ((BOARD_HEIGHT-1)-y) * (squareSize + lineGap) + border;
+      lineGap/2 + ((BOARD_SIZE-1)-y) * (squareSize + lineGap);
   }
   hPen = pen ? premovePen : highlightPen;
   oldPen = SelectObject(hdc, on ? hPen : gridPen);
@@ -2852,14 +2405,23 @@ DrawHighlightOnDC(HDC hdc, BOOLEAN on, int x, int y, int pen)
 }
 
 VOID
-DrawHighlightsOnDC(HDC hdc, HighlightInfo *h, int pen)
+DrawHighlightsOnDC(HDC hdc)
 {
   int i;
   for (i=0; i<2; i++) {
-    if (h->sq[i].x >= 0 && h->sq[i].y >= 0) 
+    if (highlightInfo.sq[i].x >= 0 && highlightInfo.sq[i].y >= 0) 
       DrawHighlightOnDC(hdc, TRUE,
-			h->sq[i].x, h->sq[i].y,
-			pen);
+			highlightInfo.sq[i].x, highlightInfo.sq[i].y,
+			HIGHLIGHT_PEN);
+  }
+  for (i=0; i<2; i++) {
+    if (premoveHighlightInfo.sq[i].x >= 0 && 
+	premoveHighlightInfo.sq[i].y >= 0) {
+	DrawHighlightOnDC(hdc, TRUE,
+	   		  premoveHighlightInfo.sq[i].x, 
+			  premoveHighlightInfo.sq[i].y,
+			  PREMOVE_PEN);
+    }
   }
 }
 
@@ -2871,45 +2433,8 @@ DrawPieceOnDC(HDC hdc, ChessSquare piece, int color, int sqcolor, int x, int y, 
 {
   HBITMAP oldBitmap;
   HBRUSH oldBrush;
-  int tmpSize;
 
   if (appData.blindfold) return;
-
-  /* [AS] Use font-based pieces if needed */
-  if( fontBitmapSquareSize >= 0 && (squareSize > 32 || gameInfo.variant >= VariantShogi)) {
-    /* Create piece bitmaps, or do nothing if piece set is up to date */
-    CreatePiecesFromFont();
-
-    if( fontBitmapSquareSize == squareSize ) {
-        int index = TranslatePieceToFontPiece(piece);
-
-        SelectObject( tmphdc, hPieceMask[ index ] );
-
-      if(appData.upsideDown ? color==flipView : (flipView && gameInfo.variant == VariantShogi))
-        StretchBlt(hdc, x+squareSize, y+squareSize, -squareSize, -squareSize, tmphdc, 0, 0, squareSize, squareSize, SRCAND);
-      else
-        BitBlt( hdc,
-            x, y,
-            squareSize, squareSize,
-            tmphdc,
-            0, 0,
-            SRCAND );
-
-        SelectObject( tmphdc, hPieceFace[ index ] );
-
-      if(appData.upsideDown ? color==flipView : (flipView && gameInfo.variant == VariantShogi))
-        StretchBlt(hdc, x+squareSize, y+squareSize, -squareSize, -squareSize, tmphdc, 0, 0, squareSize, squareSize, SRCPAINT);
-      else
-        BitBlt( hdc,
-            x, y,
-            squareSize, squareSize,
-            tmphdc,
-            0, 0,
-            SRCPAINT );
-
-        return;
-    }
-  }
 
   if (appData.monoMode) {
     SelectObject(tmphdc, PieceBitmap(piece, 
@@ -2917,464 +2442,121 @@ DrawPieceOnDC(HDC hdc, ChessSquare piece, int color, int sqcolor, int x, int y, 
     BitBlt(hdc, x, y, squareSize, squareSize, tmphdc, 0, 0,
 	   sqcolor ? SRCCOPY : NOTSRCCOPY);
   } else {
-    HBRUSH xBrush = whitePieceBrush;
-    tmpSize = squareSize;
-    if(appData.pieceDirectory[0]) xBrush = GetStockObject(WHITE_BRUSH);
-    if(minorSize &&
-        ((piece >= (int)WhiteNightrider && piece <= WhiteGrasshopper) ||
-         (piece >= (int)BlackNightrider && piece <= BlackGrasshopper))  ) {
-      /* [HGM] no bitmap available for promoted pieces in Crazyhouse        */
-      /* Bitmaps of smaller size are substituted, but we have to align them */
-      x += (squareSize - minorSize)>>1;
-      y += squareSize - minorSize - 2;
-      tmpSize = minorSize;
-    }
-    if (color || appData.allWhite ) {
+    if (color) {
       oldBitmap = SelectObject(tmphdc, PieceBitmap(piece, WHITE_PIECE));
-      if( color )
-              oldBrush = SelectObject(hdc, xBrush);
-      else    oldBrush = SelectObject(hdc, blackPieceBrush);
-      if(appData.upsideDown && color==flipView)
-        StretchBlt(hdc, x+tmpSize, y+tmpSize, -tmpSize, -tmpSize, tmphdc, 0, 0, tmpSize, tmpSize, 0x00B8074A);
-      else
-        BitBlt(hdc, x, y, tmpSize, tmpSize, tmphdc, 0, 0, 0x00B8074A);
+      oldBrush = SelectObject(hdc, whitePieceBrush);
+      BitBlt(hdc, x, y, squareSize, squareSize, tmphdc, 0, 0, 0x00B8074A);
+#if 0
+      /* Use black piece color for outline of white pieces */
+      /* Not sure this looks really good (though xboard does it).
+	 Maybe better to have another selectable color, default black */
+      SelectObject(hdc, blackPieceBrush); /* could have own brush */
+      SelectObject(tmphdc, PieceBitmap(piece, OUTLINE_PIECE));
+      BitBlt(hdc, x, y, squareSize, squareSize, tmphdc, 0, 0, 0x00B8074A);
+#else
       /* Use black for outline of white pieces */
       SelectObject(tmphdc, PieceBitmap(piece, OUTLINE_PIECE));
-      if(appData.upsideDown && color==flipView)
-        StretchBlt(hdc, x+tmpSize, y+tmpSize, -tmpSize, -tmpSize, tmphdc, 0, 0, tmpSize, tmpSize, SRCAND);
-      else
-        BitBlt(hdc, x, y, tmpSize, tmpSize, tmphdc, 0, 0, SRCAND);
-    } else if(appData.pieceDirectory[0]) {
-      oldBitmap = SelectObject(tmphdc, PieceBitmap(piece, WHITE_PIECE));
-      oldBrush = SelectObject(hdc, xBrush);
-      if(appData.upsideDown && color==flipView)
-        StretchBlt(hdc, x+tmpSize, y+tmpSize, -tmpSize, -tmpSize, tmphdc, 0, 0, tmpSize, tmpSize, 0x00B8074A);
-      else
-        BitBlt(hdc, x, y, tmpSize, tmpSize, tmphdc, 0, 0, 0x00B8074A);
-      SelectObject(tmphdc, PieceBitmap(piece, SOLID_PIECE));
-      if(appData.upsideDown && color==flipView)
-        StretchBlt(hdc, x+tmpSize, y+tmpSize, -tmpSize, -tmpSize, tmphdc, 0, 0, tmpSize, tmpSize, SRCAND);
-      else
-        BitBlt(hdc, x, y, tmpSize, tmpSize, tmphdc, 0, 0, SRCAND);
+      BitBlt(hdc, x, y, squareSize, squareSize, tmphdc, 0, 0, SRCAND);
+#endif
     } else {
+#if 0
+      /* Use white piece color for details of black pieces */
+      /* Requires filled-in solid bitmaps (BLACK_PIECE class); the
+	 WHITE_PIECE ones aren't always the right shape. */
+      /* Not sure this looks really good (though xboard does it).
+	 Maybe better to have another selectable color, default medium gray? */
+      oldBitmap = SelectObject(tmphdc, PieceBitmap(piece, BLACK_PIECE));
+      oldBrush = SelectObject(hdc, whitePieceBrush); /* could have own brush */
+      BitBlt(hdc, x, y, squareSize, squareSize, tmphdc, 0, 0, 0x00B8074A);
+      SelectObject(tmphdc, PieceBitmap(piece, SOLID_PIECE));
+      SelectObject(hdc, blackPieceBrush);
+      BitBlt(hdc, x, y, squareSize, squareSize, tmphdc, 0, 0, 0x00B8074A);
+#else
       /* Use square color for details of black pieces */
       oldBitmap = SelectObject(tmphdc, PieceBitmap(piece, SOLID_PIECE));
       oldBrush = SelectObject(hdc, blackPieceBrush);
-      if(appData.upsideDown && !flipView)
-        StretchBlt(hdc, x+tmpSize, y+tmpSize, -tmpSize, -tmpSize, tmphdc, 0, 0, tmpSize, tmpSize, 0x00B8074A);
-      else
-        BitBlt(hdc, x, y, tmpSize, tmpSize, tmphdc, 0, 0, 0x00B8074A);
+      BitBlt(hdc, x, y, squareSize, squareSize, tmphdc, 0, 0, 0x00B8074A);
+#endif
     }
     SelectObject(hdc, oldBrush);
     SelectObject(tmphdc, oldBitmap);
   }
 }
 
-/* [AS] Compute a drawing mode for a square, based on specified settings (see DrawTile) */
-int GetBackTextureMode( int algo )
-{
-    int result = BACK_TEXTURE_MODE_DISABLED;
-
-    switch( algo ) 
-    {
-        case BACK_TEXTURE_MODE_PLAIN:
-            result = 1; /* Always use identity map */
-            break;
-        case BACK_TEXTURE_MODE_FULL_RANDOM:
-            result = 1 + (myrandom() % 3); /* Pick a transformation at random */
-            break;
-    }
-
-    return result;
-}
-
-/* 
-    [AS] Compute and save texture drawing info, otherwise we may not be able
-    to handle redraws cleanly (as random numbers would always be different).
-*/
-VOID RebuildTextureSquareInfo()
-{
-    BITMAP bi;
-    int lite_w = 0;
-    int lite_h = 0;
-    int dark_w = 0;
-    int dark_h = 0;
-    int row;
-    int col;
-
-    ZeroMemory( &backTextureSquareInfo, sizeof(backTextureSquareInfo) );
-
-    if( liteBackTexture != NULL ) {
-        if( GetObject( liteBackTexture, sizeof(bi), &bi ) > 0 ) {
-            lite_w = bi.bmWidth;
-            lite_h = bi.bmHeight;
-        }
-    }
-
-    if( darkBackTexture != NULL ) {
-        if( GetObject( darkBackTexture, sizeof(bi), &bi ) > 0 ) {
-            dark_w = bi.bmWidth;
-            dark_h = bi.bmHeight;
-        }
-    }
-
-    for( row=0; row<BOARD_HEIGHT; row++ ) {
-        for( col=0; col<BOARD_WIDTH; col++ ) {
-            if( (col + row) & 1 ) {
-                /* Lite square */
-                if( lite_w >= squareSize && lite_h >= squareSize ) {
-                  if( lite_w >= squareSize*BOARD_WIDTH )
-                    backTextureSquareInfo[row][col].x = (2*col+1)*lite_w/(2*BOARD_WIDTH) - squareSize/2;  /* [HGM] cut out of center of virtual square */
-                  else
-                    backTextureSquareInfo[row][col].x = col * (lite_w - squareSize) / (BOARD_WIDTH-1);  /* [HGM] divide by size-1 in stead of size! */
-                  if( lite_h >= squareSize*BOARD_HEIGHT )
-                    backTextureSquareInfo[row][col].y = (2*(BOARD_HEIGHT-row)-1)*lite_h/(2*BOARD_HEIGHT) - squareSize/2;
-                  else
-                    backTextureSquareInfo[row][col].y = (BOARD_HEIGHT-1-row) * (lite_h - squareSize) / (BOARD_HEIGHT-1);
-                    backTextureSquareInfo[row][col].mode = GetBackTextureMode(liteBackTextureMode);
-                }
-            }
-            else {
-                /* Dark square */
-                if( dark_w >= squareSize && dark_h >= squareSize ) {
-                  if( dark_w >= squareSize*BOARD_WIDTH )
-                    backTextureSquareInfo[row][col].x = (2*col+1) * dark_w / (2*BOARD_WIDTH) - squareSize/2;
-                  else
-                    backTextureSquareInfo[row][col].x = col * (dark_w - squareSize) / (BOARD_WIDTH-1);
-                  if( dark_h >= squareSize*BOARD_HEIGHT )
-                    backTextureSquareInfo[row][col].y = (2*(BOARD_HEIGHT-row)-1) * dark_h / (2*BOARD_HEIGHT) - squareSize/2;
-                  else
-                    backTextureSquareInfo[row][col].y = (BOARD_HEIGHT-1-row) * (dark_h - squareSize) / (BOARD_HEIGHT-1);
-                    backTextureSquareInfo[row][col].mode = GetBackTextureMode(darkBackTextureMode);
-                }
-            }
-        }
-    }
-}
-
-/* [AS] Arrow highlighting support */
-
-static double A_WIDTH = 5; /* Width of arrow body */
-
-#define A_HEIGHT_FACTOR 6   /* Length of arrow "point", relative to body width */
-#define A_WIDTH_FACTOR  3   /* Width of arrow "point", relative to body width */
-
-static double Sqr( double x )
-{
-    return x*x;
-}
-
-static int Round( double x )
-{
-    return (int) (x + 0.5);
-}
-
-/* Draw an arrow between two points using current settings */
-VOID DrawArrowBetweenPoints( HDC hdc, int s_x, int s_y, int d_x, int d_y )
-{
-    POINT arrow[7];
-    double dx, dy, j, k, x, y;
-
-    if( d_x == s_x ) {
-        int h = (d_y > s_y) ? +A_WIDTH*A_HEIGHT_FACTOR : -A_WIDTH*A_HEIGHT_FACTOR;
-
-        arrow[0].x = s_x + A_WIDTH + 0.5;
-        arrow[0].y = s_y;
-
-        arrow[1].x = s_x + A_WIDTH + 0.5;
-        arrow[1].y = d_y - h;
-
-        arrow[2].x = arrow[1].x + A_WIDTH*(A_WIDTH_FACTOR-1) + 0.5;
-        arrow[2].y = d_y - h;
-
-        arrow[3].x = d_x;
-        arrow[3].y = d_y;
-
-        arrow[5].x = arrow[1].x - 2*A_WIDTH + 0.5;
-        arrow[5].y = d_y - h;
-
-        arrow[4].x = arrow[5].x - A_WIDTH*(A_WIDTH_FACTOR-1) + 0.5;
-        arrow[4].y = d_y - h;
-
-        arrow[6].x = arrow[1].x - 2*A_WIDTH + 0.5;
-        arrow[6].y = s_y;
-    }
-    else if( d_y == s_y ) {
-        int w = (d_x > s_x) ? +A_WIDTH*A_HEIGHT_FACTOR : -A_WIDTH*A_HEIGHT_FACTOR;
-
-        arrow[0].x = s_x;
-        arrow[0].y = s_y + A_WIDTH + 0.5;
-
-        arrow[1].x = d_x - w;
-        arrow[1].y = s_y + A_WIDTH + 0.5;
-
-        arrow[2].x = d_x - w;
-        arrow[2].y = arrow[1].y + A_WIDTH*(A_WIDTH_FACTOR-1) + 0.5;
-
-        arrow[3].x = d_x;
-        arrow[3].y = d_y;
-
-        arrow[5].x = d_x - w;
-        arrow[5].y = arrow[1].y - 2*A_WIDTH + 0.5;
-
-        arrow[4].x = d_x - w;
-        arrow[4].y = arrow[5].y - A_WIDTH*(A_WIDTH_FACTOR-1) + 0.5;
-
-        arrow[6].x = s_x;
-        arrow[6].y = arrow[1].y - 2*A_WIDTH + 0.5;
-    }
-    else {
-        /* [AS] Needed a lot of paper for this! :-) */
-        dy = (double) (d_y - s_y) / (double) (d_x - s_x);
-        dx = (double) (s_x - d_x) / (double) (s_y - d_y);
-  
-        j = sqrt( Sqr(A_WIDTH) / (1.0 + Sqr(dx)) );
-
-        k = sqrt( Sqr(A_WIDTH*A_HEIGHT_FACTOR) / (1.0 + Sqr(dy)) );
-
-        x = s_x;
-        y = s_y;
-
-        arrow[0].x = Round(x - j);
-        arrow[0].y = Round(y + j*dx);
-
-        arrow[1].x = Round(arrow[0].x + 2*j);   // [HGM] prevent width to be affected by rounding twice
-        arrow[1].y = Round(arrow[0].y - 2*j*dx);
-
-        if( d_x > s_x ) {
-            x = (double) d_x - k;
-            y = (double) d_y - k*dy;
-        }
-        else {
-            x = (double) d_x + k;
-            y = (double) d_y + k*dy;
-        }
-
-        x = Round(x); y = Round(y); // [HGM] make sure width of shaft is rounded the same way on both ends
-
-        arrow[6].x = Round(x - j);
-        arrow[6].y = Round(y + j*dx);
-
-        arrow[2].x = Round(arrow[6].x + 2*j);
-        arrow[2].y = Round(arrow[6].y - 2*j*dx);
-
-        arrow[3].x = Round(arrow[2].x + j*(A_WIDTH_FACTOR-1));
-        arrow[3].y = Round(arrow[2].y - j*(A_WIDTH_FACTOR-1)*dx);
-
-        arrow[4].x = d_x;
-        arrow[4].y = d_y;
-
-        arrow[5].x = Round(arrow[6].x - j*(A_WIDTH_FACTOR-1));
-        arrow[5].y = Round(arrow[6].y + j*(A_WIDTH_FACTOR-1)*dx);
-    }
-
-    Polygon( hdc, arrow, 7 );
-}
-
-/* [AS] Draw an arrow between two squares */
-VOID DrawArrowBetweenSquares( HDC hdc, int s_col, int s_row, int d_col, int d_row )
-{
-    int s_x, s_y, d_x, d_y;
-    HPEN hpen;
-    HPEN holdpen;
-    HBRUSH hbrush;
-    HBRUSH holdbrush;
-    LOGBRUSH stLB;
-
-    if( s_col == d_col && s_row == d_row ) {
-        return;
-    }
-
-    /* Get source and destination points */
-    SquareToPos( s_row, s_col, &s_x, &s_y);
-    SquareToPos( d_row, d_col, &d_x, &d_y);
-
-    if( d_y > s_y ) {
-        d_y += squareSize / 2 - squareSize / 4; // [HGM] round towards same centers on all sides!
-    }
-    else if( d_y < s_y ) {
-        d_y += squareSize / 2 + squareSize / 4;
-    }
-    else {
-        d_y += squareSize / 2;
-    }
-
-    if( d_x > s_x ) {
-        d_x += squareSize / 2 - squareSize / 4;
-    }
-    else if( d_x < s_x ) {
-        d_x += squareSize / 2 + squareSize / 4;
-    }
-    else {
-        d_x += squareSize / 2;
-    }
-
-    s_x += squareSize / 2;
-    s_y += squareSize / 2;
-
-    /* Adjust width */
-    A_WIDTH = squareSize / 14.; //[HGM] make float
-
-    /* Draw */
-    stLB.lbStyle = BS_SOLID;
-    stLB.lbColor = appData.highlightArrowColor;
-    stLB.lbHatch = 0;
-
-    hpen = CreatePen( PS_SOLID, 2, RGB(0x00,0x00,0x00) );
-    holdpen = SelectObject( hdc, hpen );
-    hbrush = CreateBrushIndirect( &stLB );
-    holdbrush = SelectObject( hdc, hbrush );
-
-    DrawArrowBetweenPoints( hdc, s_x, s_y, d_x, d_y );
-
-    SelectObject( hdc, holdpen );
-    SelectObject( hdc, holdbrush );
-    DeleteObject( hpen );
-    DeleteObject( hbrush );
-}
-
-BOOL HasHighlightInfo()
-{
-    BOOL result = FALSE;
-
-    if( highlightInfo.sq[0].x >= 0 && highlightInfo.sq[0].y >= 0 &&
-        highlightInfo.sq[1].x >= 0 && highlightInfo.sq[1].y >= 0 )
-    {
-        result = TRUE;
-    }
-
-    return result;
-}
-
-BOOL IsDrawArrowEnabled()
-{
-    BOOL result = FALSE;
-
-    if( appData.highlightMoveWithArrow && squareSize >= 32 ) {
-        result = TRUE;
-    }
-
-    return result;
-}
-
-VOID DrawArrowHighlight( HDC hdc )
-{
-    if( IsDrawArrowEnabled() && HasHighlightInfo() ) {
-        DrawArrowBetweenSquares( hdc,
-            highlightInfo.sq[0].x, highlightInfo.sq[0].y,
-            highlightInfo.sq[1].x, highlightInfo.sq[1].y );
-    }
-}
-
-HRGN GetArrowHighlightClipRegion( HDC hdc )
-{
-    HRGN result = NULL;
-
-    if( HasHighlightInfo() ) {
-        int x1, y1, x2, y2;
-        int sx, sy, dx, dy;
-
-        SquareToPos(highlightInfo.sq[0].y, highlightInfo.sq[0].x, &x1, &y1 );
-        SquareToPos(highlightInfo.sq[1].y, highlightInfo.sq[1].x, &x2, &y2 );
-
-        sx = MIN( x1, x2 );
-        sy = MIN( y1, y2 );
-        dx = MAX( x1, x2 ) + squareSize;
-        dy = MAX( y1, y2 ) + squareSize;
-
-        result = CreateRectRgn( sx, sy, dx, dy );
-    }
-
-    return result;
-}
-
-/*
-    Warning: this function modifies the behavior of several other functions. 
-    
-    Basically, Winboard is optimized to avoid drawing the whole board if not strictly
-    needed. Unfortunately, the decision whether or not to perform a full or partial
-    repaint is scattered all over the place, which is not good for features such as
-    "arrow highlighting" that require a full repaint of the board.
-
-    So, I've tried to patch the code where I thought it made sense (e.g. after or during
-    user interaction, when speed is not so important) but especially to avoid errors
-    in the displayed graphics.
-
-    In such patched places, I always try refer to this function so there is a single
-    place to maintain knowledge.
-    
-    To restore the original behavior, just return FALSE unconditionally.
-*/
-BOOL IsFullRepaintPreferrable()
-{
-    BOOL result = FALSE;
-
-    if( (appData.highlightLastMove || appData.highlightDragging) && IsDrawArrowEnabled() ) {
-        /* Arrow may appear on the board */
-        result = TRUE;
-    }
-
-    return result;
-}
-
-/* 
-    This function is called by DrawPosition to know whether a full repaint must
-    be forced or not.
-
-    Only DrawPosition may directly call this function, which makes use of 
-    some state information. Other function should call DrawPosition specifying 
-    the repaint flag, and can use IsFullRepaintPreferrable if needed.
-*/
-BOOL DrawPositionNeedsFullRepaint()
-{
-    BOOL result = FALSE;
-
-    /* 
-        Probably a slightly better policy would be to trigger a full repaint
-        when animInfo.piece changes state (i.e. empty -> non-empty and viceversa),
-        but animation is fast enough that it's difficult to notice.
-    */
-    if( animInfo.piece == EmptySquare ) {
-        if( (appData.highlightLastMove || appData.highlightDragging) && IsDrawArrowEnabled() /*&& HasHighlightInfo()*/ ) {
-            result = TRUE;
-        }
-    }
-
-    return result;
-}
-
-static HBITMAP borderBitmap;
-
 VOID
-DrawBackgroundOnDC(HDC hdc)
+DrawInfluencesOnDC(HDC hdc, Board board)
 {
-  
-  BITMAP bi;
-  HDC tmphdc;
-  HBITMAP hbm;
-  static char oldBorder[MSG_SIZ];
-  int w = 600, h = 600, mode;
+  InfluenceBoard infBoard;
+  char str[10];
+  int oldMode, oldAlign, iPosX, iPosY;
+  int iRow, iRowBeg, iRowDir, iRowEnd;
+  int iCol, iColBeg, iColDir, iColEnd;
+  HFONT oldFont;
+  HBRUSH oldBrush;
 
-  if(strcmp(appData.border, oldBorder)) { // load new one when old one no longer valid
-    strncpy(oldBorder, appData.border, MSG_SIZ-1);
-    borderBitmap = LoadImage( 0, appData.border, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE );	
+  oldBrush = SelectObject(hdc, GetStockObject(BLACK_BRUSH));
+  oldMode = SetBkMode(hdc, (appData.monoMode ? OPAQUE : TRANSPARENT));
+  oldAlign = GetTextAlign(hdc);
+  oldFont = SelectObject(hdc, font[boardSize][COORD_FONT]->hf);
+
+  GenInfluences(infBoard, board);
+  
+  iRowBeg = flipView ?  0 :  7;
+  iRowDir = flipView ?  1 : -1;
+  iRowEnd = flipView ?  8 : -1;
+  
+  iColBeg = flipView ?   7 : 0;
+  iColDir = flipView ?  -1 : 1;
+  iColEnd = flipView ?  -1 : 8;
+
+  SetTextAlign(hdc, TA_LEFT|TA_TOP);
+  iPosY = boardRect.top + lineGap;
+  for( iRow = iRowBeg; iRow != iRowEnd; iRow += iRowDir )
+  {
+    iPosX = boardRect.left + lineGap;
+    for( iCol = iColBeg; iCol != iColEnd; iCol += iColDir )
+    {
+      if( flipView )
+         itoa(infBoard[iRow][iCol].black, str, 10);
+      else
+         itoa(infBoard[iRow][iCol].white, str, 10);
+         
+      ExtTextOut(hdc, 
+                 iPosX + 2, 
+                 iPosY + 1, 
+                 0, NULL, str, 1, NULL);
+
+      iPosX += squareSize + lineGap;
+    }
+    iPosY += squareSize + lineGap;
   }
-  if(borderBitmap == NULL) { // loading failed, use white
-    FillRect( hdc, &boardRect, whitePieceBrush );
-    return;
+
+  SetTextAlign(hdc, TA_RIGHT|TA_BOTTOM);
+  iPosY = boardRect.top + lineGap;
+  for( iRow = iRowBeg; iRow != iRowEnd; iRow += iRowDir )
+  {
+    iPosX = boardRect.left + lineGap;
+    for( iCol = iColBeg; iCol != iColEnd; iCol += iColDir )
+    {
+      if( flipView )
+         itoa(infBoard[iRow][iCol].white, str, 10);
+      else
+         itoa(infBoard[iRow][iCol].black, str, 10);
+
+      ExtTextOut(hdc, 
+                 iPosX + squareSize - 2, 
+                 iPosY + squareSize - 1, 
+                 0, NULL, str, 1, NULL);
+
+      iPosX += squareSize + lineGap;
+    }
+    iPosY += squareSize + lineGap;
   }
-  tmphdc = CreateCompatibleDC(hdc);
-  hbm = SelectObject(tmphdc, borderBitmap);
-  if( GetObject( borderBitmap, sizeof(bi), &bi ) > 0 ) {
-            w = bi.bmWidth;
-            h = bi.bmHeight;
-  }
-  mode = SetStretchBltMode(hdc, COLORONCOLOR);
-  StretchBlt(hdc, boardRect.left, boardRect.top, boardRect.right - boardRect.left, 
-                  boardRect.bottom - boardRect.top, tmphdc, 0, 0, w, h, SRCCOPY);
-  SetStretchBltMode(hdc, mode);
-  SelectObject(tmphdc, hbm);
-  DeleteDC(tmphdc);
+
+  SelectObject(hdc, oldBrush);
+  SetBkMode(hdc, oldMode);
+  SetTextAlign(hdc, oldAlign);
+  SelectObject(hdc, oldFont);
 }
 
 VOID
@@ -3383,59 +2565,17 @@ DrawBoardOnDC(HDC hdc, Board board, HDC tmphdc)
   int row, column, x, y, square_color, piece_color;
   ChessSquare piece;
   HBRUSH oldBrush;
-  HDC texture_hdc = NULL;
 
-  /* [AS] Initialize background textures if needed */
-  if( liteBackTexture != NULL || darkBackTexture != NULL ) {
-      static int backTextureBoardSize; /* [HGM] boardsize: also new texture if board format changed */
-      if( backTextureSquareSize != squareSize 
-       || backTextureBoardSize != BOARD_WIDTH+BOARD_FILES*BOARD_HEIGHT) {
-	  backTextureBoardSize = BOARD_WIDTH+BOARD_FILES*BOARD_HEIGHT;
-          backTextureSquareSize = squareSize;
-          RebuildTextureSquareInfo();
-      }
-
-      texture_hdc = CreateCompatibleDC( hdc );
-  }
-
-  for (row = 0; row < BOARD_HEIGHT; row++) {
-    for (column = 0; column < BOARD_WIDTH; column++) {
+  for (row = 0; row < BOARD_SIZE; row++) {
+    for (column = 0; column < BOARD_SIZE; column++) {
   
       SquareToPos(row, column, &x, &y);
 
       piece = board[row][column];
 
       square_color = ((column + row) % 2) == 1;
-      if( gameInfo.variant == VariantXiangqi ) {
-          square_color = !InPalace(row, column);
-          if(BOARD_HEIGHT&1) { if(row==BOARD_HEIGHT/2) square_color ^= 1; }
-          else if(row < BOARD_HEIGHT/2) square_color ^= 1;
-      }
       piece_color = (int) piece < (int) BlackPawn;
 
-
-      /* [HGM] holdings file: light square or black */
-      if(column == BOARD_LEFT-2) {
-            if( row > BOARD_HEIGHT - gameInfo.holdingsSize - 1 )
-                square_color = 1;
-            else {
-                DisplayHoldingsCount(hdc, x, y, 0, 0); /* black out */
-                continue;
-            }
-      } else
-      if(column == BOARD_RGHT + 1 ) {
-            if( row < gameInfo.holdingsSize )
-                square_color = 1;
-            else {
-                DisplayHoldingsCount(hdc, x, y, 0, 0); 
-                continue;
-            }
-      }
-      if(column == BOARD_LEFT-1 ) /* left align */
-            DisplayHoldingsCount(hdc, x, y, flipView, (int) board[row][column]);
-      else if( column == BOARD_RGHT) /* right align */
-            DisplayHoldingsCount(hdc, x, y, !flipView, (int) board[row][column]);
-      else
       if (appData.monoMode) {
         if (piece == EmptySquare) {
           BitBlt(hdc, x, y, squareSize, squareSize, 0, 0, 0,
@@ -3443,31 +2583,9 @@ DrawBoardOnDC(HDC hdc, Board board, HDC tmphdc)
         } else {
           DrawPieceOnDC(hdc, piece, piece_color, square_color, x, y, tmphdc);
         }
-      } 
-      else if( appData.useBitmaps && backTextureSquareInfo[row][column].mode > 0 ) {
-          /* [AS] Draw the square using a texture bitmap */
-          HBITMAP hbm = SelectObject( texture_hdc, square_color ? liteBackTexture : darkBackTexture );
-	  int r = row, c = column; // [HGM] do not flip board in flipView
-	  if(flipView) { r = BOARD_HEIGHT-1 - r; c = BOARD_WIDTH-1 - c; }
-
-          DrawTile( x, y, 
-              squareSize, squareSize, 
-              hdc, 
-              texture_hdc,
-              backTextureSquareInfo[r][c].mode,
-              backTextureSquareInfo[r][c].x,
-              backTextureSquareInfo[r][c].y );
-
-          SelectObject( texture_hdc, hbm );
-
-          if (piece != EmptySquare) {
-              DrawPieceOnDC(hdc, piece, piece_color, -1, x, y, tmphdc);
-          }
-      }
-      else {
-        HBRUSH brush = square_color ? lightSquareBrush : darkSquareBrush;
-
-        oldBrush = SelectObject(hdc, brush );
+      } else {
+        oldBrush = SelectObject(hdc, square_color ?
+				lightSquareBrush : darkSquareBrush);
         BitBlt(hdc, x, y, squareSize, squareSize, 0, 0, 0, PATCOPY);
         SelectObject(hdc, oldBrush);
         if (piece != EmptySquare)
@@ -3475,174 +2593,20 @@ DrawBoardOnDC(HDC hdc, Board board, HDC tmphdc)
       }
     }
   }
-
-  if( texture_hdc != NULL ) {
-    DeleteDC( texture_hdc );
-  }
-}
-
-int saveDiagFlag = 0; FILE *diagFile; // [HGM] diag
-void fputDW(FILE *f, int x)
-{
-	fputc(x     & 255, f);
-	fputc(x>>8  & 255, f);
-	fputc(x>>16 & 255, f);
-	fputc(x>>24 & 255, f);
+  
+  if( appData.showInfluence ) // Influence Board (blakhalk).
+    DrawInfluencesOnDC(hdc, board);
 }
 
 #define MAX_CLIPS 200   /* more than enough */
 
 VOID
-DrawLogoOnDC(HDC hdc, RECT logoRect, HBITMAP logo)
-{
-//  HBITMAP bufferBitmap;
-  BITMAP bi;
-//  RECT Rect;
-  HDC tmphdc;
-  HBITMAP hbm;
-  int w = 100, h = 50;
-
-  if(logo == NULL) {
-    if(!logoHeight) return;
-    FillRect( hdc, &logoRect, whitePieceBrush );
-  }
-//  GetClientRect(hwndMain, &Rect);
-//  bufferBitmap = CreateCompatibleBitmap(hdc, Rect.right-Rect.left+1,
-//					Rect.bottom-Rect.top+1);
-  tmphdc = CreateCompatibleDC(hdc);
-  hbm = SelectObject(tmphdc, logo);
-  if( GetObject( logo, sizeof(bi), &bi ) > 0 ) {
-            w = bi.bmWidth;
-            h = bi.bmHeight;
-  }
-  StretchBlt(hdc, logoRect.left, logoRect.top, logoRect.right - logoRect.left, 
-                  logoRect.bottom - logoRect.top, tmphdc, 0, 0, w, h, SRCCOPY);
-  SelectObject(tmphdc, hbm);
-  DeleteDC(tmphdc);
-}
-
-VOID
-DisplayLogos()
-{
-  if(logoHeight) {
-	HDC hdc = GetDC(hwndMain);
-	HBITMAP whiteLogo = (HBITMAP) first.programLogo, blackLogo = (HBITMAP) second.programLogo;
-	if(appData.autoLogo) {
-	  
-	  switch(gameMode) { // pick logos based on game mode
-	    case IcsObserving:
-		whiteLogo = second.programLogo; // ICS logo
-		blackLogo = second.programLogo;
-	    default:
-		break;
-	    case IcsPlayingWhite:
-		if(!appData.zippyPlay) whiteLogo = userLogo;
-		blackLogo = second.programLogo; // ICS logo
-		break;
-	    case IcsPlayingBlack:
-		whiteLogo = second.programLogo; // ICS logo
-		blackLogo = appData.zippyPlay ? first.programLogo : userLogo;
-		break;
-	    case TwoMachinesPlay:
-	        if(first.twoMachinesColor[0] == 'b') {
-		    whiteLogo = second.programLogo;
-		    blackLogo = first.programLogo;
-		}
-		break;
-	    case MachinePlaysWhite:
-		blackLogo = userLogo;
-		break;
-	    case MachinePlaysBlack:
-		whiteLogo = userLogo;
-		blackLogo = first.programLogo;
-	  }
-	}
-	DrawLogoOnDC(hdc, leftLogoRect, flipClock ? blackLogo : whiteLogo);
-	DrawLogoOnDC(hdc, rightLogoRect, flipClock ? whiteLogo : blackLogo);
-	ReleaseDC(hwndMain, hdc);
-  }
-}
-
-void
-UpdateLogos(int display)
-{ // called after loading new engine(s), in tourney or from menu
-  LoadLogo(&first, 0, FALSE);
-  LoadLogo(&second, 1, appData.icsActive);
-  InitDrawingSizes(-2, 0); // adapt layout of board window to presence/absence of logos
-  if(display) DisplayLogos();
-}
-
-static HDC hdcSeek;
-
-// [HGM] seekgraph
-void DrawSeekAxis( int x, int y, int xTo, int yTo )
-{
-    POINT stPt;
-    HPEN hp = SelectObject( hdcSeek, gridPen );
-    MoveToEx( hdcSeek, boardRect.left+x, boardRect.top+y, &stPt );
-    LineTo( hdcSeek, boardRect.left+xTo, boardRect.top+yTo );
-    SelectObject( hdcSeek, hp );
-}
-
-// front-end wrapper for drawing functions to do rectangles
-void DrawSeekBackground( int left, int top, int right, int bottom )
-{
-    HPEN hp;
-    RECT rc;
-
-    if (hdcSeek == NULL) {
-    hdcSeek = GetDC(hwndMain);
-      if (!appData.monoMode) {
-        SelectPalette(hdcSeek, hPal, FALSE);
-        RealizePalette(hdcSeek);
-      }
-    }
-    hp = SelectObject( hdcSeek, gridPen );
-    rc.top = boardRect.top+top; rc.left = boardRect.left+left; 
-    rc.bottom = boardRect.top+bottom; rc.right = boardRect.left+right;
-    FillRect( hdcSeek, &rc, lightSquareBrush );
-    SelectObject( hdcSeek, hp );
-}
-
-// front-end wrapper for putting text in graph
-void DrawSeekText(char *buf, int x, int y)
-{
-        SIZE stSize;
-	SetBkMode( hdcSeek, TRANSPARENT );
-        GetTextExtentPoint32( hdcSeek, buf, strlen(buf), &stSize );
-        TextOut( hdcSeek, boardRect.left+x-3, boardRect.top+y-stSize.cy/2, buf, strlen(buf) );
-}
-
-void DrawSeekDot(int x, int y, int color)
-{
-	int square = color & 0x80;
-	HBRUSH oldBrush = SelectObject(hdcSeek, 
-			color == 0 ? markerBrush : color == 1 ? darkSquareBrush : explodeBrush);
-	color &= 0x7F;
-	if(square)
-	    Rectangle(hdcSeek, boardRect.left+x - squareSize/9, boardRect.top+y - squareSize/9,
-			       boardRect.left+x + squareSize/9, boardRect.top+y + squareSize/9);
-	else
-	    Ellipse(hdcSeek, boardRect.left+x - squareSize/8, boardRect.top+y - squareSize/8,
-			     boardRect.left+x + squareSize/8, boardRect.top+y + squareSize/8);
-	    SelectObject(hdcSeek, oldBrush);
-}
-
-void DrawSeekOpen()
-{
-}
-
-void DrawSeekClose()
-{
-}
-
-VOID
 HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
 {
-  static Board lastReq[2], lastDrawn[2];
+  static Board lastReq, lastDrawn;
   static HighlightInfo lastDrawnHighlight, lastDrawnPremove;
   static int lastDrawnFlipView = 0;
-  static int lastReqValid[2] = {0, 0}, lastDrawnValid[2] = {0, 0};
+  static int lastReqValid = 0, lastDrawnValid = 0;
   int releaseDC, x, y, x2, y2, row, column, num_clips = 0, i;
   HDC tmphdc;
   HDC hdcmem;
@@ -3651,7 +2615,6 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
   RECT Rect;
   HRGN clips[MAX_CLIPS];
   ChessSquare dragged_piece = EmptySquare;
-  int nr = twoBoards*partnerUp;
 
   /* I'm undecided on this - this function figures out whether a full
    * repaint is necessary on its own, so there's no real reason to have the
@@ -3663,20 +2626,14 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
    */
   Boolean fullrepaint = repaint;
 
-  if(DrawSeekGraph()) return; // [HG} seekgraph: suppress printing board if seek graph up
-
-  if( DrawPositionNeedsFullRepaint() ) {
-      fullrepaint = TRUE;
-  }
-
   if (board == NULL) {
-    if (!lastReqValid[nr]) {
+    if (!lastReqValid) {
       return;
     }
-    board = lastReq[nr];
+    board = lastReq;
   } else {
-    CopyBoard(lastReq[nr], board);
-    lastReqValid[nr] = 1;
+    CopyBoard(lastReq, board);
+    lastReqValid = 1;
   }
 
   if (doingSizing) {
@@ -3698,41 +2655,53 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
     releaseDC = FALSE;
   }
 
+#if 0
+  fprintf(debugFP, "*******************************\n"
+                   "repaint = %s\n"
+                   "dragInfo.from (%d,%d)\n"
+                   "dragInfo.start (%d,%d)\n"
+                   "dragInfo.pos (%d,%d)\n"
+                   "dragInfo.lastpos (%d,%d)\n", 
+                    repaint ? "TRUE" : "FALSE",
+                    dragInfo.from.x, dragInfo.from.y, 
+                    dragInfo.start.x, dragInfo.start.y,
+                    dragInfo.pos.x, dragInfo.pos.y,
+                    dragInfo.lastpos.x, dragInfo.lastpos.y);
+  fprintf(debugFP, "prev:  ");
+  for (row = 0; row < 8; row++) {
+    for (column = 0; column < 8; column++) {
+      fprintf(debugFP, "%d ", lastDrawn[row][column]);
+    }
+  }
+  fprintf(debugFP, "\n");
+  fprintf(debugFP, "board: ");
+  for (row = 0; row < 8; row++) {
+    for (column = 0; column < 8; column++) {
+      fprintf(debugFP, "%d ", board[row][column]);
+    }
+  }
+  fprintf(debugFP, "\n");
+  fflush(debugFP);
+#endif
+
   /* Create some work-DCs */
   hdcmem = CreateCompatibleDC(hdc);
   tmphdc = CreateCompatibleDC(hdc);
-
-  /* If dragging is in progress, we temporarely remove the piece */
-  /* [HGM] or temporarily decrease count if stacked              */
-  /*       !! Moved to before board compare !!                   */
-  if (dragInfo.from.x >= 0 && dragInfo.pos.x >= 0) {
-    dragged_piece = board[dragInfo.from.y][dragInfo.from.x];
-    if(dragInfo.from.x == BOARD_LEFT-2 ) {
-            if(--board[dragInfo.from.y][dragInfo.from.x+1] == 0 )
-        board[dragInfo.from.y][dragInfo.from.x] = EmptySquare;
-    } else 
-    if(dragInfo.from.x == BOARD_RGHT+1) {
-            if(--board[dragInfo.from.y][dragInfo.from.x-1] == 0 )
-        board[dragInfo.from.y][dragInfo.from.x] = EmptySquare;
-    } else 
-        board[dragInfo.from.y][dragInfo.from.x] = gatingPiece;
-  }
 
   /* Figure out which squares need updating by comparing the 
    * newest board with the last drawn board and checking if
    * flipping has changed.
    */
-  if (!fullrepaint && lastDrawnValid[nr] && (nr == 1 || lastDrawnFlipView == flipView)) {
-    for (row = 0; row < BOARD_HEIGHT; row++) { /* [HGM] true size, not 8 */
-      for (column = 0; column < BOARD_WIDTH; column++) {
-	if (lastDrawn[nr][row][column] != board[row][column]) {
+  if (!fullrepaint && lastDrawnValid && lastDrawnFlipView == flipView) {
+    for (row = 0; row < 8; row++) {
+      for (column = 0; column < 8; column++) {
+	if (lastDrawn[row][column] != board[row][column]) {
 	  SquareToPos(row, column, &x, &y);
 	  clips[num_clips++] =
 	    CreateRectRgn(x, y, x + squareSize, y + squareSize);
 	}
       }
     }
-   if(nr == 0) { // [HGM] dual: no highlights on second board
     for (i=0; i<2; i++) {
       if (lastDrawnHighlight.sq[i].x != highlightInfo.sq[i].x ||
 	  lastDrawnHighlight.sq[i].y != highlightInfo.sq[i].y) {
@@ -3773,30 +2742,6 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
 	}
       }
     }
-   } else { // nr == 1
-	partnerHighlightInfo.sq[0].y = board[EP_STATUS-4];
-	partnerHighlightInfo.sq[0].x = board[EP_STATUS-3];
-	partnerHighlightInfo.sq[1].y = board[EP_STATUS-2];
-	partnerHighlightInfo.sq[1].x = board[EP_STATUS-1];
-      for (i=0; i<2; i++) {
-	if (partnerHighlightInfo.sq[i].x >= 0 &&
-	    partnerHighlightInfo.sq[i].y >= 0) {
-	  SquareToPos(partnerHighlightInfo.sq[i].y,
-		      partnerHighlightInfo.sq[i].x, &x, &y);
-	  clips[num_clips++] =
-	    CreateRectRgn(x - lineGap, y - lineGap, 
-	                  x + squareSize + lineGap, y + squareSize + lineGap);
-	}
-	if (oldPartnerHighlight.sq[i].x >= 0 && 
-	    oldPartnerHighlight.sq[i].y >= 0) {
-	  SquareToPos(oldPartnerHighlight.sq[i].y, 
-		      oldPartnerHighlight.sq[i].x, &x, &y);
-	  clips[num_clips++] =
-	    CreateRectRgn(x - lineGap, y - lineGap, 
-	                  x + squareSize + lineGap, y + squareSize + lineGap);
-	}
-      }
-   }
   } else {
     fullrepaint = TRUE;
   }
@@ -3836,6 +2781,12 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
     }
   }
 
+  /* If dragging is in progress, we temporarely remove the piece */
+  if (dragInfo.from.x >= 0 && dragInfo.pos.x >= 0) {
+    dragged_piece = board[dragInfo.from.y][dragInfo.from.x];
+    board[dragInfo.from.y][dragInfo.from.x] = EmptySquare;
+  }
+
   /* Are we animating a move?  
    * If so, 
    *   - remove the piece from the board (temporarely)
@@ -3855,8 +2806,8 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
 	 atomic, where the piece moves to an empty square and then
 	 explodes.  The old and new positions both had an empty square
 	 at the destination, but animation has drawn a piece there and
-	 we have to remember to erase it. [HGM] moved until after setting lastDrawn */
-      lastDrawn[0][animInfo.to.y][animInfo.to.x] = animInfo.piece;
+	 we have to remember to erase it. */
+      lastDrawn[animInfo.to.y][animInfo.to.x] = animInfo.piece;
     }
   }
 
@@ -3874,74 +2825,18 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
   }
 
   /* Do all the drawing to the memory DC */
-  if(explodeInfo.radius) { // [HGM] atomic
-	HBRUSH oldBrush;
-	int x, y, r=(explodeInfo.radius * squareSize)/100;
-        ChessSquare piece = board[explodeInfo.fromY][explodeInfo.fromX];
-        board[explodeInfo.fromY][explodeInfo.fromX] = EmptySquare; // suppress display of capturer
-	SquareToPos(explodeInfo.toY, explodeInfo.toX, &x, &y);
-	x += squareSize/2;
-	y += squareSize/2;
-        if(!fullrepaint) {
-	  clips[num_clips] = CreateRectRgn(x-r, y-r, x+r, y+r);
-	  ExtSelectClipRgn(hdcmem, clips[num_clips++], RGN_OR);
-	}
-	DrawGridOnDC(hdcmem);
-	DrawHighlightsOnDC(hdcmem, &highlightInfo, HIGHLIGHT_PEN);
-	DrawHighlightsOnDC(hdcmem, &premoveHighlightInfo, PREMOVE_PEN);
-	DrawBoardOnDC(hdcmem, board, tmphdc);
-        board[explodeInfo.fromY][explodeInfo.fromX] = piece;
-	oldBrush = SelectObject(hdcmem, explodeBrush);
-	Ellipse(hdcmem, x-r, y-r, x+r, y+r);
-	SelectObject(hdcmem, oldBrush);
-  } else {
-    if(border) DrawBackgroundOnDC(hdcmem);
-    DrawGridOnDC(hdcmem);
-    if(nr == 0) { // [HGM] dual: decide which highlights to draw
-	DrawHighlightsOnDC(hdcmem, &highlightInfo, HIGHLIGHT_PEN);
-	DrawHighlightsOnDC(hdcmem, &premoveHighlightInfo, PREMOVE_PEN);
-    } else {
-	DrawHighlightsOnDC(hdcmem, &partnerHighlightInfo, HIGHLIGHT_PEN);
-	oldPartnerHighlight = partnerHighlightInfo;
-    }
-    DrawBoardOnDC(hdcmem, board, tmphdc);
-  }
-  if(nr == 0) // [HGM] dual: markers only on left board
-  for (row = 0; row < BOARD_HEIGHT; row++) {
-    for (column = 0; column < BOARD_WIDTH; column++) {
-	if (marker[row][column]) { // marker changes only occur with full repaint!
-	    HBRUSH oldBrush = SelectObject(hdcmem, 
-			marker[row][column] == 2 ? markerBrush : explodeBrush);
-	    SquareToPos(row, column, &x, &y);
-	    Ellipse(hdcmem, x + squareSize/4, y + squareSize/4,
-		  	  x + 3*squareSize/4, y + 3*squareSize/4);
-	    SelectObject(hdcmem, oldBrush);
-	}
-    }
-  }
-
-  if( appData.highlightMoveWithArrow ) {
-    DrawArrowHighlight(hdcmem);
-  }
-
+  DrawGridOnDC(hdcmem);
+  DrawHighlightsOnDC(hdcmem);
+  DrawBoardOnDC(hdcmem, board, tmphdc);
   DrawCoordsOnDC(hdcmem);
 
-  CopyBoard(lastDrawn[nr], board); /* [HGM] Moved to here from end of routine, */
-                 /* to make sure lastDrawn contains what is actually drawn */
-
-  /* Put the dragged piece back into place and draw it (out of place!) */
-    if (dragged_piece != EmptySquare) {
-    /* [HGM] or restack */
-    if(dragInfo.from.x == BOARD_LEFT-2 )
-                 board[dragInfo.from.y][dragInfo.from.x+1]++;
-    else
-    if(dragInfo.from.x == BOARD_RGHT+1 )
-                 board[dragInfo.from.y][dragInfo.from.x-1]++;
+  /* Put the dragged piece back into place and draw it */
+  if (dragged_piece != EmptySquare) {
     board[dragInfo.from.y][dragInfo.from.x] = dragged_piece;
     x = dragInfo.pos.x - squareSize / 2;
     y = dragInfo.pos.y - squareSize / 2;
-    DrawPieceOnDC(hdcmem, dragInfo.piece,
-		  ((int) dragInfo.piece < (int) BlackPawn), 
+    DrawPieceOnDC(hdcmem, dragged_piece,
+		  ((int) dragged_piece < (int) BlackPawn), 
                   (dragInfo.from.y + dragInfo.from.x) % 2, x, y, tmphdc);
   }   
   
@@ -3963,13 +2858,6 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
 
   /* Set clipping on the target DC */
   if (!fullrepaint) {
-    if(nr == 1) for (x = 0; x < num_clips; x++) { // [HGM] dual: translate clips
-	RECT rect;
-	GetRgnBox(clips[x], &rect);
-	DeleteObject(clips[x]);
-	clips[x] = CreateRectRgn(rect.left + wpMain.width/2, rect.top, 
-	                  rect.right + wpMain.width/2, rect.bottom);
-    }
     SelectClipRgn(hdc, clips[0]);
     for (x = 1; x < num_clips; x++) {
       if (ExtSelectClipRgn(hdc, clips[x], RGN_OR) == ERROR)
@@ -3981,83 +2869,10 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
    * This way we avoid any flickering
    */
   oldBitmap = SelectObject(tmphdc, bufferBitmap);
-  BitBlt(hdc, boardRect.left + twoBoards*partnerUp*wpMain.width/2, boardRect.top, // [HGM] dual
+  BitBlt(hdc, boardRect.left, boardRect.top,
 	 boardRect.right - boardRect.left,
 	 boardRect.bottom - boardRect.top,
 	 tmphdc, boardRect.left, boardRect.top, SRCCOPY);
-  if(saveDiagFlag) { 
-    BITMAP b; int i, j=0, m, w, wb, fac=0; char *pData; 
-    BITMAPINFOHEADER bih; int color[16], nrColors=0;
-
-    GetObject(bufferBitmap, sizeof(b), &b);
-    if(pData = malloc(b.bmWidthBytes*b.bmHeight + 10000)) {
-	bih.biSize = sizeof(BITMAPINFOHEADER);
-	bih.biWidth = b.bmWidth;
-	bih.biHeight = b.bmHeight;
-	bih.biPlanes = 1;
-	bih.biBitCount = b.bmBitsPixel;
-	bih.biCompression = 0;
-	bih.biSizeImage = b.bmWidthBytes*b.bmHeight;
-	bih.biXPelsPerMeter = 0;
-	bih.biYPelsPerMeter = 0;
-	bih.biClrUsed = 0;
-	bih.biClrImportant = 0;
-//	fprintf(diagFile, "t=%d\nw=%d\nh=%d\nB=%d\nP=%d\nX=%d\n", 
-//		b.bmType,  b.bmWidth,  b.bmHeight, b.bmWidthBytes,  b.bmPlanes,  b.bmBitsPixel);
-	GetDIBits(tmphdc,bufferBitmap,0,b.bmHeight,pData,(BITMAPINFO*)&bih,DIB_RGB_COLORS);
-//	fprintf(diagFile, "%8x\n", (int) pData);
-
-	wb = b.bmWidthBytes;
-	// count colors
-	for(i=0; i<wb*(b.bmHeight - boardRect.top + OUTER_MARGIN)>>2; i++) {
-		int k = ((int*) pData)[i];
-		for(j=0; j<nrColors; j++) if(color[j] == k) break;
-		if(j >= 16) break;
-		color[j] = k;
-		if(j >= nrColors) nrColors = j+1;
-	}
-	if(j<16) { // 16 colors is enough. Compress to 4 bits per pixel
-		INT p = 0;
-		for(i=0; i<b.bmHeight - boardRect.top + OUTER_MARGIN; i++) {
-		    for(w=0; w<(wb>>2); w+=2) {
-			int k = ((int*) pData)[(wb*i>>2) + w];
-			for(j=0; j<nrColors; j++) if(color[j] == k) break;
-			k = ((int*) pData)[(wb*i>>2) + w + 1];
-			for(m=0; m<nrColors; m++) if(color[m] == k) break;
-			pData[p++] = m | j<<4;
-		    }
-		    while(p&3) pData[p++] = 0;
-		}
-		fac = 3;
-		wb = ((wb+31)>>5)<<2;
-	}
-	// write BITMAPFILEHEADER
-	fprintf(diagFile, "BM");
-        fputDW(diagFile, wb*(b.bmHeight - boardRect.top + OUTER_MARGIN)+0x36 + (fac?64:0));
-        fputDW(diagFile, 0);
-        fputDW(diagFile, 0x36 + (fac?64:0));
-	// write BITMAPINFOHEADER
-        fputDW(diagFile, 40);
-        fputDW(diagFile, b.bmWidth);
-        fputDW(diagFile, b.bmHeight - boardRect.top + OUTER_MARGIN);
-	if(fac) fputDW(diagFile, 0x040001);   // planes and bits/pixel
-        else    fputDW(diagFile, 0x200001);   // planes and bits/pixel
-        fputDW(diagFile, 0);
-        fputDW(diagFile, 0);
-        fputDW(diagFile, 0);
-        fputDW(diagFile, 0);
-        fputDW(diagFile, 0);
-        fputDW(diagFile, 0);
-	// write color table
-	if(fac)
-	for(i=0; i<16; i++) fputDW(diagFile, color[i]);
-	// write bitmap data
-	for(i=0; i<wb*(b.bmHeight - boardRect.top + OUTER_MARGIN); i++) 
-		fputc(pData[i], diagFile);
-	free(pData);
-     }
-  }
-
   SelectObject(tmphdc, oldBitmap);
 
   /* Massive cleanup */
@@ -4070,31 +2885,18 @@ HDCDrawPosition(HDC hdc, BOOLEAN repaint, Board board)
   if (releaseDC) 
     ReleaseDC(hwndMain, hdc);
   
-  if (lastDrawnFlipView != flipView && nr == 0) {
+  if (lastDrawnFlipView != flipView) {
     if (flipView)
       CheckMenuItem(GetMenu(hwndMain),IDM_FlipView, MF_BYCOMMAND|MF_CHECKED);
     else
       CheckMenuItem(GetMenu(hwndMain),IDM_FlipView, MF_BYCOMMAND|MF_UNCHECKED);
   }
 
-/*  CopyBoard(lastDrawn, board);*/
+  CopyBoard(lastDrawn, board);
   lastDrawnHighlight = highlightInfo;
   lastDrawnPremove   = premoveHighlightInfo;
   lastDrawnFlipView = flipView;
-  lastDrawnValid[nr] = 1;
-}
-
-/* [HGM] diag: Save the current board display to the given open file and close the file */
-int
-SaveDiagram(f)
-     FILE *f;
-{
-    saveDiagFlag = 1; diagFile = f;
-    HDCDrawPosition(NULL, TRUE, NULL);
-    saveDiagFlag = 0;
-
-    fclose(f);
-    return TRUE;
+  lastDrawnValid = 1;
 }
 
 
@@ -4110,7 +2912,7 @@ PaintProc(HWND hwnd)
   PAINTSTRUCT ps;
   HFONT       oldFont;
 
-  if((hdc = BeginPaint(hwnd, &ps))) {
+  if(hdc = BeginPaint(hwnd, &ps)) {
     if (IsIconic(hwnd)) {
       DrawIcon(hdc, 2, 2, iconCurrent);
     } else {
@@ -4119,11 +2921,6 @@ PaintProc(HWND hwnd)
 	RealizePalette(hdc);
       }
       HDCDrawPosition(hdc, 1, NULL);
-      if(twoBoards) { // [HGM] dual: also redraw other board in other orientation
-	flipView = !flipView; partnerUp = !partnerUp;
-	HDCDrawPosition(hdc, 1, NULL);
-	flipView = !flipView; partnerUp = !partnerUp;
-      }
       oldFont =
 	SelectObject(hdc, font[boardSize][MESSAGE_FONT]->hf);
       ExtTextOut(hdc, messageRect.left, messageRect.top,
@@ -4131,7 +2928,6 @@ PaintProc(HWND hwnd)
 		 &messageRect, messageText, strlen(messageText), NULL);
       SelectObject(hdc, oldFont);
       DisplayBothClocks();
-      DisplayLogos();
     }
     EndPaint(hwnd,&ps);
   }
@@ -4146,18 +2942,18 @@ PaintProc(HWND hwnd)
  * The offset boardRect.left or boardRect.top must already have been
  *   subtracted from x.
  */
-int EventToSquare(x, limit)
-     int x, limit;
+int
+EventToSquare(int x)
 {
-  if (x <= border)
+  if (x <= 0)
     return -2;
-  if (x < lineGap + border)
+  if (x < lineGap)
     return -1;
-  x -= lineGap + border;
+  x -= lineGap;
   if ((x % (squareSize + lineGap)) >= squareSize)
     return -1;
   x /= (squareSize + lineGap);
-    if (x >= limit)
+  if (x >= BOARD_SIZE)
     return -2;
   return x;
 }
@@ -4169,11 +2965,11 @@ typedef struct {
 } DropEnable;
 
 DropEnable dropEnables[] = {
-  { 'P', DP_Pawn, N_("Pawn") },
-  { 'N', DP_Knight, N_("Knight") },
-  { 'B', DP_Bishop, N_("Bishop") },
-  { 'R', DP_Rook, N_("Rook") },
-  { 'Q', DP_Queen, N_("Queen") },
+  { 'P', DP_Pawn, "Pawn" },
+  { 'N', DP_Knight, "Knight" },
+  { 'B', DP_Bishop, "Bishop" },
+  { 'R', DP_Rook, "Rook" },
+  { 'Q', DP_Queen, "Queen" },
 };
 
 VOID
@@ -4189,7 +2985,7 @@ SetupDropMenu(HMENU hmenu)
 	       dropEnables[i].piece);
     count = 0;
     while (p && *p++ == dropEnables[i].piece) count++;
-      snprintf(item, MSG_SIZ, "%s  %d", T_(dropEnables[i].name), count);
+    sprintf(item, "%s  %d", dropEnables[i].name, count);
     enable = count > 0 || !appData.testLegality
       /*!!temp:*/ || (gameInfo.variant == VariantCrazyhouse
 		      && !appData.icsActive);
@@ -4199,40 +2995,18 @@ SetupDropMenu(HMENU hmenu)
   }
 }
 
-void DragPieceBegin(int x, int y, Boolean instantly)
-{
-      dragInfo.lastpos.x = boardRect.left + x;
-      dragInfo.lastpos.y = boardRect.top + y;
-      if(instantly) dragInfo.pos = dragInfo.lastpos;
-      dragInfo.from.x = fromX;
-      dragInfo.from.y = fromY;
-      dragInfo.piece = boards[currentMove][fromY][fromX];
-      dragInfo.start = dragInfo.from;
-      SetCapture(hwndMain);
-}
-
-void DragPieceEnd(int x, int y)
-{
-    ReleaseCapture();
-    dragInfo.start.x = dragInfo.start.y = -1;
-    dragInfo.from = dragInfo.start;
-    dragInfo.pos = dragInfo.lastpos = dragInfo.start;
-}
-
-void ChangeDragPiece(ChessSquare piece)
-{
-    dragInfo.piece = piece;
-}
+static int fromX = -1, fromY = -1, toX, toY;
 
 /* Event handler for mouse messages */
 VOID
 MouseEvent(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-  int x, y, menuNr;
+  int x, y;
   POINT pt;
   static int recursive = 0;
   HMENU hmenu;
-  BOOLEAN forceFullRepaint = IsFullRepaintPreferrable(); /* [AS] */
+  BOOLEAN saveAnimate;
+  static BOOLEAN sameAgain = FALSE;
 
   if (recursive) {
     if (message == WM_MBUTTONUP) {
@@ -4248,88 +3022,178 @@ MouseEvent(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
   
   pt.x = LOWORD(lParam);
   pt.y = HIWORD(lParam);
-  x = EventToSquare(pt.x - boardRect.left, BOARD_WIDTH);
-  y = EventToSquare(pt.y - boardRect.top, BOARD_HEIGHT);
+  x = EventToSquare(pt.x - boardRect.left);
+  y = EventToSquare(pt.y - boardRect.top);
   if (!flipView && y >= 0) {
-    y = BOARD_HEIGHT - 1 - y;
+    y = BOARD_SIZE - 1 - y;
   }
   if (flipView && x >= 0) {
-    x = BOARD_WIDTH - 1 - x;
+    x = BOARD_SIZE - 1 - x;
   }
-
-  shiftKey = GetKeyState(VK_SHIFT) < 0; // [HGM] remember last shift status
-  controlKey = GetKeyState(VK_CONTROL) < 0; // [HGM] remember last shift status
 
   switch (message) {
   case WM_LBUTTONDOWN:
+    ErrorPopDown();
+    sameAgain = FALSE;
+    if (y == -2) {
+      /* Downclick vertically off board; check if on clock */
       if (PtInRect((LPRECT) &whiteRect, pt)) {
-        ClockClick(flipClock); break;
+	if (gameMode == EditPosition) {
+	  SetWhiteToPlayEvent();
+	} else if (gameMode == IcsPlayingBlack ||
+		   gameMode == MachinePlaysWhite) {
+	  CallFlagEvent();
+	}
       } else if (PtInRect((LPRECT) &blackRect, pt)) {
-	ClockClick(!flipClock); break;
+	if (gameMode == EditPosition) {
+	  SetBlackToPlayEvent();
+	} else if (gameMode == IcsPlayingWhite ||
+		   gameMode == MachinePlaysBlack) {
+	  CallFlagEvent();
+	}
       }
+      if (!appData.highlightLastMove) {
+        ClearHighlights();
+	DrawPosition(FALSE, NULL);
+      }
+      fromX = fromY = -1;
       dragInfo.start.x = dragInfo.start.y = -1;
       dragInfo.from = dragInfo.start;
-    if(fromX == -1 && frozen) { // not sure where this is for
-		fromX = fromY = -1; 
-      DrawPosition(forceFullRepaint || FALSE, NULL); /* [AS] */
       break;
+    } else if (x < 0 || y < 0) {
+      break;
+    } else if (fromX == x && fromY == y) {
+      /* Downclick on same square again */
+      ClearHighlights();
+      DrawPosition(FALSE, NULL);
+      sameAgain = TRUE;  
+    } else if (fromX != -1) {
+      /* Downclick on different square */
+      ChessSquare pdown, pup;
+      pdown = boards[currentMove][fromY][fromX];
+      pup = boards[currentMove][y][x];
+      if (gameMode == EditPosition ||
+	  !((WhitePawn <= pdown && pdown <= WhiteKing &&
+	     WhitePawn <= pup && pup <= WhiteKing) ||
+	    (BlackPawn <= pdown && pdown <= BlackKing &&
+	     BlackPawn <= pup && pup <= BlackKing))) {
+	/* EditPosition, empty square, or different color piece;
+	   click-click move is possible */
+	toX = x;
+	toY = y;
+	if (IsPromotion(fromX, fromY, toX, toY)) {
+	  if (appData.alwaysPromoteToQueen) {
+	    UserMoveEvent(fromX, fromY, toX, toY, 'q');
+	    if (!appData.highlightLastMove) {
+	      ClearHighlights();
+	      DrawPosition(FALSE, NULL);
+	    }
+	  } else {
+	    SetHighlights(fromX, fromY, toX, toY);
+	    DrawPosition(FALSE, NULL);
+	    PromotionPopup(hwnd);
+	  }
+	} else {	/* not a promotion */
+	  if (appData.animate || appData.highlightLastMove) {
+	    SetHighlights(fromX, fromY, toX, toY);
+	  } else {
+	    ClearHighlights();
+	  }
+	  UserMoveEvent(fromX, fromY, toX, toY, NULLCHAR);
+	  if (appData.animate && !appData.highlightLastMove) {
+	    ClearHighlights();
+	    DrawPosition(FALSE, NULL);
+	  }
+	}
+	if (gotPremove) SetPremoveHighlights(fromX, fromY, toX, toY);
+	fromX = fromY = -1;
+	break;
+      }
+      ClearHighlights();
+      DrawPosition(FALSE, NULL);
     }
-      LeftClick(Press, pt.x - boardRect.left, pt.y - boardRect.top);
-      DrawPosition(TRUE, NULL);
+    /* First downclick, or restart on a square with same color piece */
+    if (!frozen && OKToStartUserMove(x, y)) {
+      fromX = x;
+      fromY = y;
+      dragInfo.lastpos = pt;
+      dragInfo.from.x = fromX;
+      dragInfo.from.y = fromY;
+      dragInfo.start = dragInfo.from;
+      SetCapture(hwndMain);
+    } else {
+      fromX = fromY = -1;
+      dragInfo.start.x = dragInfo.start.y = -1;
+      dragInfo.from = dragInfo.start;
+    }
     break;
 
   case WM_LBUTTONUP:
-      LeftClick(Release, pt.x - boardRect.left, pt.y - boardRect.top);
-      DrawPosition(TRUE, NULL);
+    ReleaseCapture();
+    if (fromX == -1) break;
+    if (x == fromX && y == fromY) {
+      dragInfo.from.x = dragInfo.from.y = -1;
+      /* Upclick on same square */
+      if (sameAgain) {
+	/* Clicked same square twice: abort click-click move */
+	fromX = fromY = -1;
+	gotPremove = 0;
+	ClearPremoveHighlights();
+      } else {
+	/* First square clicked: start click-click move */
+	SetHighlights(fromX, fromY, -1, -1);
+      }
+      DrawPosition(FALSE, NULL);
+    } else if (dragInfo.from.x < 0 || dragInfo.from.y < 0) {
+      /* Errant click; ignore */
+      break;
+    } else {
+      /* Finish drag move */
+      dragInfo.from.x = dragInfo.from.y = -1;
+      toX = x;
+      toY = y;
+      saveAnimate = appData.animate; /* sorry, Hawk :) */
+      appData.animate = appData.animate && !appData.animateDragging;
+      if (IsPromotion(fromX, fromY, toX, toY)) {
+	if (appData.alwaysPromoteToQueen) {
+	  UserMoveEvent(fromX, fromY, toX, toY, 'q');
+	} else {
+	  DrawPosition(FALSE, NULL);
+	  PromotionPopup(hwnd);
+	}
+      } else {
+	UserMoveEvent(fromX, fromY, toX, toY, NULLCHAR);
+      }
+      if (gotPremove) SetPremoveHighlights(fromX, fromY, toX, toY);
+      appData.animate = saveAnimate;
+      fromX = fromY = -1;
+      if (appData.highlightDragging && !appData.highlightLastMove) {
+	ClearHighlights();
+      }
+      if (appData.animate || appData.animateDragging ||
+	  appData.highlightDragging || gotPremove) {
+	DrawPosition(FALSE, NULL);
+      }
+    }
+    dragInfo.start.x = dragInfo.start.y = -1; 
+    dragInfo.pos = dragInfo.lastpos = dragInfo.start;
     break;
 
   case WM_MOUSEMOVE:
-    if(SeekGraphClick(Press, pt.x - boardRect.left, pt.y - boardRect.top, 1)) break;
-    if(PromoScroll(pt.x - boardRect.left, pt.y - boardRect.top)) break;
-    MovePV(pt.x - boardRect.left, pt.y - boardRect.top, boardRect.bottom - boardRect.top);
     if ((appData.animateDragging || appData.highlightDragging)
 	&& (wParam & MK_LBUTTON)
-	&& dragInfo.from.x >= 0) 
-    {
-      BOOL full_repaint = FALSE;
-
+	&& dragInfo.from.x >= 0) {
       if (appData.animateDragging) {
 	dragInfo.pos = pt;
       }
       if (appData.highlightDragging) {
 	SetHighlights(fromX, fromY, x, y);
-        if( IsDrawArrowEnabled() && (x < 0 || x >= BOARD_WIDTH || y < 0 || y >= BOARD_HEIGHT) ) {
-            full_repaint = TRUE;
-        }
       }
-      
-      DrawPosition( full_repaint, NULL);
-      
+      DrawPosition(FALSE, NULL);
       dragInfo.lastpos = dragInfo.pos;
     }
     break;
 
-  case WM_MOUSEWHEEL: // [DM]
-    {  static int lastDir = 0; // [HGM] build in some hysteresis to avoid spurious events
-       /* Mouse Wheel is being rolled forward
-        * Play moves forward
-        */
-       if((short)HIWORD(wParam) < 0 && currentMove < forwardMostMove) 
-		{ if(lastDir == 1) ForwardEvent(); else lastDir = 1; } // [HGM] suppress first event in direction
-       /* Mouse Wheel is being rolled backward
-        * Play moves backward
-        */
-       if((short)HIWORD(wParam) > 0 && currentMove > backwardMostMove) 
-		{ if(lastDir == -1) BackwardEvent(); else lastDir = -1; }
-    }
-    break;
-
-  case WM_MBUTTONUP:
-  case WM_RBUTTONUP:
-    ReleaseCapture();
-    RightClick(Release, pt.x - boardRect.left, pt.y - boardRect.top, &fromX, &fromY);
-    break;
- 
   case WM_MBUTTONDOWN:
   case WM_RBUTTONDOWN:
     ErrorPopDown();
@@ -4342,20 +3206,14 @@ MouseEvent(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     if (appData.highlightDragging) {
       ClearHighlights();
     }
-    if(y == -2) {
-      /* [HGM] right mouse button in clock area edit-game mode ups clock */
-      if (PtInRect((LPRECT) &whiteRect, pt)) {
-          if (GetKeyState(VK_SHIFT) < 0) AdjustClock(flipClock, 1);
-      } else if (PtInRect((LPRECT) &blackRect, pt)) {
-          if (GetKeyState(VK_SHIFT) < 0) AdjustClock(!flipClock, 1);
-      }
-      break;
-    }
     DrawPosition(TRUE, NULL);
 
-    menuNr = RightClick(Press, pt.x - boardRect.left, pt.y - boardRect.top, &fromX, &fromY);
-    switch (menuNr) {
-    case 0:
+    switch (gameMode) {
+    case EditPosition:
+    case IcsExamining:
+      if (x < 0 || y < 0) break;
+      fromX = x;
+      fromY = y;
       if (message == WM_MBUTTONDOWN) {
 	buttonCount = 3;  /* even if system didn't think so */
 	if (wParam & MK_SHIFT) 
@@ -4363,22 +3221,38 @@ MouseEvent(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	else
 	  MenuPopup(hwnd, pt, LoadMenu(hInst, "WhitePieceMenu"), -1);
       } else { /* message == WM_RBUTTONDOWN */
+#if 0
+	if (buttonCount == 3) {
+	  if (wParam & MK_SHIFT) 
+	    MenuPopup(hwnd, pt, LoadMenu(hInst, "WhitePieceMenu"), -1);
+	  else
+	    MenuPopup(hwnd, pt, LoadMenu(hInst, "BlackPieceMenu"), -1);
+	} else {
+	  MenuPopup(hwnd, pt, LoadMenu(hInst, "PieceMenu"), -1);
+	}
+#else
 	/* Just have one menu, on the right button.  Windows users don't
 	   think to try the middle one, and sometimes other software steals
 	   it, or it doesn't really exist. */
-        if(gameInfo.variant != VariantShogi)
-            MenuPopup(hwnd, pt, LoadMenu(hInst, "PieceMenu"), -1);
-        else
-            MenuPopup(hwnd, pt, LoadMenu(hInst, "ShogiPieceMenu"), -1);
+	MenuPopup(hwnd, pt, LoadMenu(hInst, "PieceMenu"), -1);
+#endif
       }
       break;
-    case 2:
-      SetCapture(hwndMain);
-      break;
-    case 1:
+    case IcsPlayingWhite:
+    case IcsPlayingBlack:
+    case EditGame:
+    case MachinePlaysWhite:
+    case MachinePlaysBlack:
+      if (appData.testLegality &&
+	  gameInfo.variant != VariantBughouse &&
+	  gameInfo.variant != VariantCrazyhouse) break;
+      if (x < 0 || y < 0) break;
+      fromX = x;
+      fromY = y;
       hmenu = LoadMenu(hInst, "DropPieceMenu");
       SetupDropMenu(hmenu);
       MenuPopup(hwnd, pt, hmenu, -1);
+      break;
     default:
       break;
     }
@@ -4392,7 +3266,7 @@ MouseEvent(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 LRESULT CALLBACK
 ButtonProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-  int id = GetWindowLongPtr(hwnd, GWLP_ID);
+  int id = GetWindowLong(hwnd, GWL_ID);
   int i, dir;
 
   for (i=0; i<N_BUTTONS; i++) {
@@ -4414,16 +3288,31 @@ ButtonProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     case '\r':
       SendMessage(hwndMain, WM_COMMAND, MAKEWPARAM(buttonDesc[i].id, 0), 0);
       return TRUE;
+    case '\t':
+      if (appData.icsActive) {
+	if (GetKeyState(VK_SHIFT) < 0) {
+	  /* shifted */
+	  HWND h = GetDlgItem(hwndConsole, OPT_ConsoleInput);
+	  if (IsIconic(hwndConsole)) ShowWindow(hwndConsole, SW_RESTORE);
+	  SetFocus(h);
+	} else {
+	  /* unshifted */
+	  HWND h = GetDlgItem(hwndConsole, OPT_ConsoleText);
+	  if (IsIconic(hwndConsole)) ShowWindow(hwndConsole, SW_RESTORE);
+	  SetFocus(h);
+	}
+	return TRUE;
+      }
+      break;
     default:
-      if (appData.icsActive && (isalpha((char)wParam) || wParam == '0')) {
-	// [HGM] movenum: only letters or leading zero should go to ICS input
+      if (appData.icsActive) {
         HWND h = GetDlgItem(hwndConsole, OPT_ConsoleInput);
 	if (IsIconic(hwndConsole)) ShowWindow(hwndConsole, SW_RESTORE);
 	SetFocus(h);
 	SendMessage(h, WM_CHAR, wParam, lParam);
 	return TRUE;
       } else if (isalpha((char)wParam) || isdigit((char)wParam)){
-	TypeInEvent((char)wParam);
+	PopUpMoveDialog((char)wParam);
       }
       break;
     }
@@ -4442,39 +3331,9 @@ Promotion(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   case WM_INITDIALOG: /* message: initialize dialog box */
     /* Center the dialog over the application window */
     CenterWindow(hDlg, GetWindow(hDlg, GW_OWNER));
-    Translate(hDlg, DLG_PromotionKing);
     ShowWindow(GetDlgItem(hDlg, PB_King), 
       (!appData.testLegality || gameInfo.variant == VariantSuicide ||
-       gameInfo.variant == VariantSpartan && !WhiteOnMove(currentMove) ||
-       gameInfo.variant == VariantGiveaway || gameInfo.variant == VariantSuper ) ?
-	       SW_SHOW : SW_HIDE);
-    /* [HGM] Only allow C & A promotions if these pieces are defined */
-    ShowWindow(GetDlgItem(hDlg, PB_Archbishop),
-       ((PieceToChar(WhiteAngel) >= 'A' && WhiteOnMove(currentMove) &&
-         PieceToChar(WhiteAngel) != '~') ||
-        (PieceToChar(BlackAngel) >= 'A' && !WhiteOnMove(currentMove) &&
-         PieceToChar(BlackAngel) != '~')   ) ?
-	       SW_SHOW : SW_HIDE);
-    ShowWindow(GetDlgItem(hDlg, PB_Chancellor), 
-       ((PieceToChar(WhiteMarshall) >= 'A' && WhiteOnMove(currentMove) &&
-         PieceToChar(WhiteMarshall) != '~') ||
-        (PieceToChar(BlackMarshall) >= 'A' && !WhiteOnMove(currentMove) &&
-         PieceToChar(BlackMarshall) != '~')   ) ?
-	       SW_SHOW : SW_HIDE);
-    /* [HGM] Hide B & R button in Shogi, use Q as promote, N as defer */
-    ShowWindow(GetDlgItem(hDlg, PB_Rook),
-       gameInfo.variant != VariantShogi ?
-	       SW_SHOW : SW_HIDE);
-    ShowWindow(GetDlgItem(hDlg, PB_Bishop), 
-       gameInfo.variant != VariantShogi ?
-	       SW_SHOW : SW_HIDE);
-    if(gameInfo.variant == VariantShogi) {
-        SetDlgItemText(hDlg, PB_Queen, "YES");
-        SetDlgItemText(hDlg, PB_Knight, "NO");
-        SetWindowText(hDlg, "Promote?");
-    }
-    ShowWindow(GetDlgItem(hDlg, IDC_Centaur), 
-       gameInfo.variant == VariantSuper ?
+       gameInfo.variant == VariantGiveaway) ?
 	       SW_SHOW : SW_HIDE);
     return TRUE;
 
@@ -4486,35 +3345,25 @@ Promotion(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
       DrawPosition(FALSE, NULL);
       return TRUE;
     case PB_King:
-      promoChar = gameInfo.variant == VariantSuper ? PieceToChar(BlackSilver) : PieceToChar(BlackKing);
+      promoChar = 'k';
       break;
     case PB_Queen:
-      promoChar = gameInfo.variant == VariantShogi ? '+' : ToLower(PieceToChar(WhiteOnMove(currentMove) ? WhiteQueen : BlackQueen));
+      promoChar = 'q';
       break;
     case PB_Rook:
-      promoChar = ToLower(PieceToChar(WhiteOnMove(currentMove) ? WhiteRook : BlackRook));
-      if(gameInfo.variant == VariantSpartan && !WhiteOnMove(currentMove)) promoChar = PieceToChar(BlackDragon);
+      promoChar = 'r';
       break;
     case PB_Bishop:
-      promoChar = ToLower(PieceToChar(WhiteOnMove(currentMove) ? WhiteBishop : BlackBishop));
-      if(gameInfo.variant == VariantSpartan && !WhiteOnMove(currentMove)) promoChar = PieceToChar(BlackAlfil);
-      break;
-    case PB_Chancellor:
-      promoChar = ToLower(PieceToChar(WhiteOnMove(currentMove) ? WhiteMarshall : BlackMarshall));
-      break;
-    case PB_Archbishop:
-      promoChar = ToLower(PieceToChar(WhiteOnMove(currentMove) ? WhiteAngel : BlackAngel));
+      promoChar = 'b';
       break;
     case PB_Knight:
-      promoChar = gameInfo.variant == VariantShogi ? '=' : PieceToChar(WhiteOnMove(currentMove) ? WhiteKnight : BlackKnight);
+      promoChar = 'n';
       break;
     default:
       return FALSE;
     }
-    if(promoChar == '.') return FALSE; // invalid piece chosen 
     EndDialog(hDlg, TRUE); /* Exit the dialog */
     UserMoveEvent(fromX, fromY, toX, toY, promoChar);
-    fromX = fromY = -1;
     if (!appData.highlightLastMove) {
       ClearHighlights();
       DrawPosition(FALSE, NULL);
@@ -4536,11 +3385,11 @@ PromotionPopup(HWND hwnd)
   FreeProcInstance(lpProc);
 }
 
-void
-PromotionPopUp()
+/* Toggle ShowThinking */
+VOID
+ToggleShowThinking()
 {
-  DrawPosition(TRUE, NULL);
-  PromotionPopup(hwndMain);
+  ShowThinkingEvent(!appData.showThinking);
 }
 
 VOID
@@ -4549,7 +3398,7 @@ LoadGameDialog(HWND hwnd, char* title)
   UINT number = 0;
   FILE *f;
   char fileTitle[MSG_SIZ];
-  f = OpenFileDialog(hwnd, "rb", "",
+  f = OpenFileDialog(hwnd, FALSE, "",
  	             appData.oldSaveStyle ? "gam" : "pgn",
 		     GAME_FILT,
 		     title, &number, fileTitle, NULL);
@@ -4558,7 +3407,7 @@ LoadGameDialog(HWND hwnd, char* title)
     if (number == 0) {
       int error = GameListBuild(f);
       if (error) {
-        DisplayError(_("Cannot build game list"), error);
+        DisplayError("Cannot build game list", error);
       } else if (!ListEmpty(&gameList) &&
                  ((ListGame *) gameList.tailPred)->number > 1) {
 	GameListPopUp(f, fileTitle);
@@ -4569,57 +3418,6 @@ LoadGameDialog(HWND hwnd, char* title)
     }
     LoadGame(f, number, fileTitle, FALSE);
   }
-}
-
-int get_term_width()
-{
-    HDC hdc;
-    TEXTMETRIC tm;
-    RECT rc;
-    HFONT hfont, hold_font;
-    LOGFONT lf;
-    HWND hText;
-
-    if (hwndConsole)
-        hText = GetDlgItem(hwndConsole, OPT_ConsoleText);
-    else
-        return 79;
-
-    // get the text metrics
-    hdc = GetDC(hText);
-    lf = font[boardSize][CONSOLE_FONT]->lf;
-    if (consoleCF.dwEffects & CFE_BOLD)
-        lf.lfWeight = FW_BOLD;
-    if (consoleCF.dwEffects & CFE_ITALIC)
-        lf.lfItalic = TRUE;
-    if (consoleCF.dwEffects & CFE_STRIKEOUT)
-        lf.lfStrikeOut = TRUE;
-    if (consoleCF.dwEffects & CFE_UNDERLINE)
-        lf.lfUnderline = TRUE;
-    hfont = CreateFontIndirect(&lf);
-    hold_font = SelectObject(hdc, hfont);
-    GetTextMetrics(hdc, &tm);
-    SelectObject(hdc, hold_font);
-    DeleteObject(hfont);
-    ReleaseDC(hText, hdc);
-
-    // get the rectangle
-    SendMessage(hText, EM_GETRECT, 0, (LPARAM)&rc);
-
-    return (rc.right-rc.left) / tm.tmAveCharWidth;
-}
-
-void UpdateICSWidth(HWND hText)
-{
-    LONG old_width, new_width;
-
-    new_width = get_term_width(hText, FALSE);
-    old_width = GetWindowLongPtr(hText, GWLP_USERDATA);
-    if (new_width != old_width)
-    {
-        ics_update_width(new_width);
-        SetWindowLongPtr(hText, GWLP_USERDATA, new_width);
-    }
 }
 
 VOID
@@ -4634,8 +3432,7 @@ ChangedConsoleFont()
 
   cfmt.cbSize = sizeof(CHARFORMAT);
   cfmt.dwMask = CFM_FACE|CFM_SIZE|CFM_CHARSET;
-    safeStrCpy(cfmt.szFaceName, font[boardSize][CONSOLE_FONT]->mfp.faceName,
-	       sizeof(cfmt.szFaceName)/sizeof(cfmt.szFaceName[0]) );
+  strcpy(cfmt.szFaceName, font[boardSize][CONSOLE_FONT]->mfp.faceName);
   /* yHeight is expressed in twips.  A twip is 1/20 of a font's point
    * size.  This was undocumented in the version of MSVC++ that I had
    * when I wrote the code, but is apparently documented now.
@@ -4662,7 +3459,6 @@ ChangedConsoleFont()
   paraf.dxOffset = WRAP_INDENT;
   SendMessage(hText, EM_SETPARAFORMAT, 0, (LPARAM) &paraf);
   SendMessage(hText, EM_EXSETSEL, 0, (LPARAM)&sel);
-  UpdateICSWidth(hText);
 }
 
 /*---------------------------------------------------------------------------*\
@@ -4681,8 +3477,6 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
   FILE *f;
   UINT number;
   char fileTitle[MSG_SIZ];
-  static SnapData sd;
-  static int peek=0;
 
   switch (message) {
 
@@ -4706,45 +3500,33 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
   case WM_MBUTTONUP:
   case WM_RBUTTONUP:
   case WM_MOUSEMOVE:
-  case WM_MOUSEWHEEL:
     MouseEvent(hwnd, message, wParam, lParam);
-    break;
-
-  case WM_KEYUP:
-    if((char)wParam == '\b') {
-      ForwardEvent(); peek = 0;
-    }
-
-    JAWS_KBUP_NAVIGATION
-
-    break;
-
-  case WM_KEYDOWN:
-    if((char)wParam == '\b') {
-      if(!peek) BackwardEvent(), peek = 1;
-    }
-
-    JAWS_KBDOWN_NAVIGATION
-
     break;
 
   case WM_CHAR:
     
-    JAWS_ALT_INTERCEPT
-
-    if (appData.icsActive && ((char)wParam == '\r' || (char)wParam > ' ' && !((char)wParam >= '1' && (char)wParam <= '9'))) { 
-	// [HGM] movenum: for non-zero digits we always do type-in dialog
+    if (appData.icsActive) {
+      if (wParam == '\t') {
+	if (GetKeyState(VK_SHIFT) < 0) {
+	  /* shifted */
+	  HWND h = GetDlgItem(hwndConsole, OPT_ConsoleInput);
+	  if (IsIconic(hwndConsole)) ShowWindow(hwndConsole, SW_RESTORE);
+	  SetFocus(h);
+	} else {
+	  /* unshifted */
+	  HWND h = GetDlgItem(hwndConsole, OPT_ConsoleText);
+	  if (IsIconic(hwndConsole)) ShowWindow(hwndConsole, SW_RESTORE);
+	  SetFocus(h);
+	}
+      } else {
 	HWND h = GetDlgItem(hwndConsole, OPT_ConsoleInput);
 	if (IsIconic(hwndConsole)) ShowWindow(hwndConsole, SW_RESTORE);
 	SetFocus(h);
 	SendMessage(h, message, wParam, lParam);
-    } else if(lParam != KF_REPEAT) {
-	if (isalpha((char)wParam) || isdigit((char)wParam)) {
-		TypeInEvent((char)wParam);
-	} else if((char)wParam == 003) CopyGameToClipboard();
-	 else if((char)wParam == 026) PasteGameOrFENFromClipboard();
+      }
+    } else if (isalpha((char)wParam) || isdigit((char)wParam)) {
+      PopUpMoveDialog((char)wParam);
     }
-
     break;
 
   case WM_PALETTECHANGED:
@@ -4755,7 +3537,11 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       nnew = RealizePalette(hdc);
       if (nnew > 0) {
 	paletteChanged = TRUE;
-        InvalidateRect(hwnd, &boardRect, FALSE);
+#if 0
+        UpdateColors(hdc);
+#else
+        InvalidateRect(hwnd, &boardRect, FALSE);/*faster!*/
+#endif
       }
       ReleaseDC(hwnd, hdc);
     }
@@ -4783,21 +3569,11 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     switch (wmId) {
     case IDM_NewGame:
       ResetGameEvent();
-      SAY("new game enter a move to play against the computer with white");
-      break;
-
-    case IDM_NewGameFRC:
-      if( NewGameFRC() == 0 ) {
-        ResetGameEvent();
-      }
-      break;
-
-    case IDM_NewVariant:
-      NewVariantPopup(hwnd);
+      AnalysisPopDown();
       break;
 
     case IDM_LoadGame:
-      LoadGameDialog(hwnd, _("Load Game from File"));
+      LoadGameDialog(hwnd, "Load Game from File");
       break;
 
     case IDM_LoadNextGame:
@@ -4817,10 +3593,10 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
         Reset(FALSE, TRUE);
       }
       number = 1;
-      f = OpenFileDialog(hwnd, "rb", "",
+      f = OpenFileDialog(hwnd, FALSE, "",
 			 appData.oldSaveStyle ? "pos" : "fen",
 			 POSITION_FILT,
-			 _("Load Position from File"), &number, fileTitle, NULL);
+			 "Load Position from File", &number, fileTitle, NULL);
       if (f != NULL) {
 	LoadPosition(f, number, fileTitle);
       }
@@ -4840,10 +3616,10 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case IDM_SaveGame:
       defName = DefaultFileName(appData.oldSaveStyle ? "gam" : "pgn");
-      f = OpenFileDialog(hwnd, "a", defName,
+      f = OpenFileDialog(hwnd, TRUE, defName,
 			 appData.oldSaveStyle ? "gam" : "pgn",
 			 GAME_FILT,
-			 _("Save Game to File"), NULL, fileTitle, NULL);
+			 "Save Game to File", NULL, fileTitle, NULL);
       if (f != NULL) {
 	SaveGame(f, 0, "");
       }
@@ -4851,28 +3627,13 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case IDM_SavePosition:
       defName = DefaultFileName(appData.oldSaveStyle ? "pos" : "fen");
-      f = OpenFileDialog(hwnd, "a", defName,
+      f = OpenFileDialog(hwnd, TRUE, defName,
 			 appData.oldSaveStyle ? "pos" : "fen",
 			 POSITION_FILT,
-			 _("Save Position to File"), NULL, fileTitle, NULL);
+			 "Save Position to File", NULL, fileTitle, NULL);
       if (f != NULL) {
 	SavePosition(f, 0, "");
       }
-      break;
-
-    case IDM_SaveDiagram:
-      defName = "diagram";
-      f = OpenFileDialog(hwnd, "wb", defName,
-			 "bmp",
-			 DIAGRAM_FILT,
-			 _("Save Diagram to File"), NULL, fileTitle, NULL);
-      if (f != NULL) {
-	SaveDiagram(f);
-      }
-      break;
-
-    case IDM_CreateBook:
-      CreateBookEvent();
       break;
 
     case IDM_CopyGame:
@@ -4881,68 +3642,6 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case IDM_PasteGame:
       PasteGameFromClipboard();
-      break;
-
-    case IDM_CopyGameListToClipboard:
-      CopyGameListToClipboard();
-      break;
-
-    /* [AS] Autodetect FEN or PGN data */
-    case IDM_PasteAny:
-      PasteGameOrFENFromClipboard();
-      break;
-
-    /* [AS] Move history */
-    case IDM_ShowMoveHistory:
-        if( MoveHistoryIsUp() ) {
-            MoveHistoryPopDown();
-        }
-        else {
-            MoveHistoryPopUp();
-        }
-        break;
-
-    /* [AS] Eval graph */
-    case IDM_ShowEvalGraph:
-        if( EvalGraphIsUp() ) {
-            EvalGraphPopDown();
-        }
-        else {
-            EvalGraphPopUp();
-	    SetFocus(hwndMain);
-        }
-        break;
-
-    /* [AS] Engine output */
-    case IDM_ShowEngineOutput:
-        if( EngineOutputIsUp() ) {
-            EngineOutputPopDown();
-        }
-        else {
-            EngineOutputPopUp();
-        }
-        break;
-
-    /* [AS] User adjudication */
-    case IDM_UserAdjudication_White:
-        UserAdjudicationEvent( +1 );
-        break;
-
-    case IDM_UserAdjudication_Black:
-        UserAdjudicationEvent( -1 );
-        break;
-
-    case IDM_UserAdjudication_Draw:
-        UserAdjudicationEvent( 0 );
-        break;
-
-    /* [AS] Game list options dialog */
-    case IDM_GameListOptions:
-      GameListOptions();
-      break;
-
-    case IDM_NewChat:
-      ChatPopUp(NULL);
       break;
 
     case IDM_CopyPosition:
@@ -4981,7 +3680,6 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	  TagsPopUp(tags, CmailMsg());
 	  free(tags);
       }
-      SAY("computer starts playing white");
       break;
 
     case IDM_MachineBlack:
@@ -4995,11 +3693,6 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	  TagsPopUp(tags, CmailMsg());
 	  free(tags);
       }
-      SAY("computer starts playing black");
-      break;
-
-    case IDM_Match: // [HGM] match: flows into next case, after setting Match Mode and nr of Games
-      MatchEvent(2); // distinguish from command-line-triggered case (matchMode=1)
       break;
 
     case IDM_TwoMachines:
@@ -5013,17 +3706,30 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	  TagsPopUp(tags, CmailMsg());
 	  free(tags);
       }
-      SAY("computer starts playing both sides");
       break;
 
     case IDM_AnalysisMode:
-      if(AnalyzeModeEvent()) {
-	SAY("analyzing current position");
+      if (!first.analysisSupport) {
+        char buf[MSG_SIZ];
+        sprintf(buf, "%s does not support analysis", first.tidy);
+        DisplayError(buf, 0);
+      } else {
+	if (!appData.showThinking) ToggleShowThinking();
+	AnalyzeModeEvent();
       }
       break;
 
     case IDM_AnalyzeFile:
-      AnalyzeFileEvent();
+      if (!first.analysisSupport) {
+        char buf[MSG_SIZ];
+        sprintf(buf, "%s does not support analysis", first.tidy);
+        DisplayError(buf, 0);
+      } else {
+	if (!appData.showThinking) ToggleShowThinking();
+	AnalyzeFileEvent();
+	LoadGameDialog(hwnd, "Analyze Game from File");
+	AnalysisPeriodicEvent(1);
+      }
       break;
 
     case IDM_IcsClient:
@@ -5031,15 +3737,11 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       break;
 
     case IDM_EditGame:
-    case IDM_EditGame2:
       EditGameEvent();
-      SAY("edit game");
       break;
 
     case IDM_EditPosition:
-    case IDM_EditPosition2:
       EditPositionEvent();
-      SAY("enter a FEN string or setup a position on the board using the control R pop up menu");
       break;
 
     case IDM_Training:
@@ -5050,34 +3752,12 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       ShowGameListProc();
       break;
 
-    case IDM_EditProgs1:
-      EditTagsPopUp(firstChessProgramNames, &firstChessProgramNames);
-      break;
-
-    case IDM_LoadProg1:
-     LoadEnginePopUp(hwndMain, 0);
-      break;
-
-    case IDM_LoadProg2:
-     LoadEnginePopUp(hwndMain, 1);
-      break;
-
-    case IDM_EditServers:
-      EditTagsPopUp(icsNames, &icsNames);
-      break;
-
     case IDM_EditTags:
-    case IDM_Tags:
       EditTagsProc();
       break;
 
-    case IDM_EditBook:
-      EditBookEvent();
-      break;
-
     case IDM_EditComment:
-    case IDM_Comment:
-      if (commentUp && editComment) {
+      if (commentDialogUp && editComment) {
 	CommentPopDown();
       } else {
 	EditCommentEvent();
@@ -5128,24 +3808,14 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       StopExaminingEvent();
       break;
 
-    case IDM_Upload:
-      UploadGameEvent();
-      break;
-
     case IDM_TypeInMove:
-      TypeInEvent('\000');
-      break;
-
-    case IDM_TypeInName:
-      PopUpNameDialog('\000');
+      PopUpMoveDialog('\000');
       break;
 
     case IDM_Backward:
       BackwardEvent();
       SetFocus(hwndMain);
       break;
-
-    JAWS_MENU_ITEMS
 
     case IDM_Forward:
       ForwardEvent();
@@ -5162,17 +3832,8 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       SetFocus(hwndMain);
       break;
 
-    case OPT_GameListNext: // [HGM] forward these two accelerators to Game List
-    case OPT_GameListPrev:
-      if(gameListDialog) SendMessage(gameListDialog, WM_COMMAND, wmId, 0);
-      break;
-
     case IDM_Revert:
-      RevertEvent(FALSE);
-      break;
-
-    case IDM_Annotate: // [HGM] vari: revert with annotation
-      RevertEvent(TRUE);
+      RevertEvent();
       break;
 
     case IDM_TruncateGame:
@@ -5192,51 +3853,12 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       DrawPosition(FALSE, NULL);
       break;
 
-    case IDM_FlipClock:
-      flipClock = !flipClock;
-      DisplayBothClocks();
-      DisplayLogos();
-      break;
-
-    case IDM_MuteSounds:
-      mute = !mute; // [HGM] mute: keep track of global muting variable
-      CheckMenuItem(GetMenu(hwndMain),IDM_MuteSounds, 
-				MF_BYCOMMAND|(mute?MF_CHECKED:MF_UNCHECKED));
-      break;
-
     case IDM_GeneralOptions:
       GeneralOptionsPopup(hwnd);
-      DrawPosition(TRUE, NULL);
       break;
 
     case IDM_BoardOptions:
       BoardOptionsPopup(hwnd);
-      break;
-
-    case IDM_ThemeOptions:
-      ThemeOptionsPopup(hwnd);
-      break;
-
-    case IDM_EnginePlayOptions:
-      EnginePlayOptionsPopup(hwnd);
-      break;
-
-    case IDM_Engine1Options:
-      EngineOptionsPopup(hwnd, &first);
-      break;
-
-    case IDM_Engine2Options:
-      savedHwnd = hwnd;
-      if(WaitForEngine(&second, SettingsMenuIfReady)) break;
-      EngineOptionsPopup(hwnd, &second);
-      break;
-
-    case IDM_OptionsUCI:
-      UciOptionsPopup(hwnd);
-      break;
-
-    case IDM_Tourney:
-      TourneyPopup(hwnd);
       break;
 
     case IDM_IcsOptions:
@@ -5296,7 +3918,7 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	char dir[MSG_SIZ];
 	GetCurrentDirectory(MSG_SIZ, dir);
 	SetCurrentDirectory(installDir);
-	debugFP = fopen(appData.nameOfDebugFile, "w");
+	debugFP = fopen("WinBoard.debug", "w");
         SetCurrentDirectory(dir);
         setbuf(debugFP, NULL);
       } else {
@@ -5306,19 +3928,17 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       break;
 
     case IDM_HELPCONTENTS:
-      if (!MyHelp (hwnd, "winboard.hlp", HELP_KEY,(DWORD)(LPSTR)"CONTENTS") &&
-	  !HtmlHelp(hwnd, "winboard.chm", 0, 0)	) {
-	  MessageBox (GetFocus(),
-		    _("Unable to activate help"),
+      if (!WinHelp (hwnd, "winboard.hlp", HELP_KEY,(DWORD)(LPSTR)"CONTENTS")) {
+	MessageBox (GetFocus(),
+		    "Unable to activate help",
 		    szAppName, MB_SYSTEMMODAL|MB_OK|MB_ICONHAND);
       }
       break;
 
     case IDM_HELPSEARCH:
-        if (!MyHelp (hwnd, "winboard.hlp", HELP_PARTIALKEY, (DWORD)(LPSTR)"") &&
-	    !HtmlHelp(hwnd, "winboard.chm", 0, 0)	) {
+      if (!WinHelp(hwnd, "winboard.hlp", HELP_PARTIALKEY, (DWORD)(LPSTR)"")) {
 	MessageBox (GetFocus(),
-		    _("Unable to activate help"),
+		    "Unable to activate help",
 		    szAppName, MB_SYSTEMMODAL|MB_OK|MB_ICONHAND);
       }
       break;
@@ -5326,7 +3946,7 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     case IDM_HELPHELP:
       if(!WinHelp(hwnd, (LPSTR)NULL, HELP_HELPONHELP, 0)) {
 	MessageBox (GetFocus(),
-		    _("Unable to activate help"),
+		    "Unable to activate help",
 		    szAppName, MB_SYSTEMMODAL|MB_OK|MB_ICONHAND);
       }
       break;
@@ -5340,12 +3960,12 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       break;
 
     case IDM_DirectCommand1:
-      AskQuestionEvent(_("Direct Command"),
-		       _("Send to chess program:"), "", "1");
+      AskQuestionEvent("Direct Command",
+		       "Send to chess program:", "", "1");
       break;
     case IDM_DirectCommand2:
-      AskQuestionEvent(_("Direct Command"),
-		       _("Send to second chess program:"), "", "2");
+      AskQuestionEvent("Direct Command",
+		       "Send to second chess program:", "", "2");
       break;
 
     case EP_WhitePawn:
@@ -5370,36 +3990,6 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case EP_WhiteQueen:
       EditPositionMenuEvent(WhiteQueen, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_WhiteFerz:
-      EditPositionMenuEvent(WhiteFerz, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_WhiteWazir:
-      EditPositionMenuEvent(WhiteWazir, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_WhiteAlfil:
-      EditPositionMenuEvent(WhiteAlfil, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_WhiteCannon:
-      EditPositionMenuEvent(WhiteCannon, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_WhiteCardinal:
-      EditPositionMenuEvent(WhiteAngel, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_WhiteMarshall:
-      EditPositionMenuEvent(WhiteMarshall, fromX, fromY);
       fromX = fromY = -1;
       break;
 
@@ -5433,36 +4023,6 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       fromX = fromY = -1;
       break;
 
-    case EP_BlackFerz:
-      EditPositionMenuEvent(BlackFerz, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_BlackWazir:
-      EditPositionMenuEvent(BlackWazir, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_BlackAlfil:
-      EditPositionMenuEvent(BlackAlfil, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_BlackCannon:
-      EditPositionMenuEvent(BlackCannon, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_BlackCardinal:
-      EditPositionMenuEvent(BlackAngel, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_BlackMarshall:
-      EditPositionMenuEvent(BlackMarshall, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
     case EP_BlackKing:
       EditPositionMenuEvent(BlackKing, fromX, fromY);
       fromX = fromY = -1;
@@ -5485,16 +4045,6 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case EP_Black:
       EditPositionMenuEvent(BlackPlay, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_Promote:
-      EditPositionMenuEvent(PromotePiece, fromX, fromY);
-      fromX = fromY = -1;
-      break;
-
-    case EP_Demote:
-      EditPositionMenuEvent(DemotePiece, fromX, fromY);
       fromX = fromY = -1;
       break;
 
@@ -5523,26 +4073,7 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       fromX = fromY = -1;
       break;
 
-    case IDM_English:
-      barbaric = 0; appData.language = "";
-      TranslateMenus(0);
-      CheckMenuItem(GetMenu(hwndMain), lastChecked, MF_BYCOMMAND|MF_UNCHECKED);
-      CheckMenuItem(GetMenu(hwndMain), IDM_English, MF_BYCOMMAND|MF_CHECKED);
-      lastChecked = wmId;
-      break;
-
     default:
-      if(wmId >= IDM_RecentEngines && wmId < IDM_RecentEngines + appData.recentEngines)
-          RecentEngineEvent(wmId - IDM_RecentEngines);
-      else
-      if(wmId > IDM_English && wmId < IDM_English+20) {
-          LoadLanguageFile(languageFile[wmId - IDM_English - 1]);
-          TranslateMenus(0);
-          CheckMenuItem(GetMenu(hwndMain), lastChecked, MF_BYCOMMAND|MF_UNCHECKED);
-          CheckMenuItem(GetMenu(hwndMain), wmId, MF_BYCOMMAND|MF_CHECKED);
-          lastChecked = wmId;
-          break;
-      }
       return (DefWindowProc(hwnd, message, wParam, lParam));
     }
     break;
@@ -5560,8 +4091,8 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       AutoPlayGameLoop(); /* call into back end */
       break;
     case ANALYSIS_TIMER_ID:
-      if ((gameMode == AnalyzeMode || gameMode == AnalyzeFile
-                 || appData.icsEngineAnalyze) && appData.periodicUpdates) {
+      if ((gameMode == AnalyzeMode || gameMode == AnalyzeFile) && 
+	  appData.periodicUpdates) {
 	AnalysisPeriodicEvent(0);
       } else {
 	KillTimer(hwnd, analysisTimerEvent);
@@ -5580,56 +4111,20 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     InputEvent(hwnd, message, wParam, lParam);
     break;
 
-  /* [AS] Also move "attached" child windows */
-  case WM_WINDOWPOSCHANGING:
-
-    if( hwnd == hwndMain && appData.useStickyWindows ) {
-        LPWINDOWPOS lpwp = (LPWINDOWPOS) lParam;
-
-        if( ((lpwp->flags & SWP_NOMOVE) == 0) && ((lpwp->flags & SWP_NOSIZE) != 0) ) {
-            /* Window is moving */
-            RECT rcMain;
-
-//            GetWindowRect( hwnd, &rcMain ); //[HGM] sticky: in XP this returned new position, not old
-	    rcMain.left   = wpMain.x;           //              replace by these 4 lines to reconstruct old rect
-	    rcMain.right  = wpMain.x + wpMain.width;
-	    rcMain.top    = wpMain.y;
-	    rcMain.bottom = wpMain.y + wpMain.height;
-            
-            ReattachAfterMove( &rcMain, lpwp->x, lpwp->y, moveHistoryDialog, &wpMoveHistory );
-            ReattachAfterMove( &rcMain, lpwp->x, lpwp->y, evalGraphDialog, &wpEvalGraph );
-            ReattachAfterMove( &rcMain, lpwp->x, lpwp->y, engineOutputDialog, &wpEngineOutput );
-            ReattachAfterMove( &rcMain, lpwp->x, lpwp->y, gameListDialog, &wpGameList );
-            ReattachAfterMove( &rcMain, lpwp->x, lpwp->y, hwndConsole, &wpConsole );
-	    wpMain.x = lpwp->x;
-            wpMain.y = lpwp->y;
-        }
-    }
-    break;
-
-  /* [AS] Snapping */
   case WM_ENTERSIZEMOVE:
-    if(appData.debugMode) { fprintf(debugFP, "size-move\n"); }
     if (hwnd == hwndMain) {
       doingSizing = TRUE;
       lastSizing = 0;
     }
-    return OnEnterSizeMove( &sd, hwnd, wParam, lParam );
     break;
 
   case WM_SIZING:
-    if(appData.debugMode) { fprintf(debugFP, "sizing\n"); }
     if (hwnd == hwndMain) {
       lastSizing = wParam;
     }
     break;
 
-  case WM_MOVING:
-    if(appData.debugMode) { fprintf(debugFP, "moving\n"); }
-      return OnMoving( &sd, hwnd, wParam, lParam );
-
   case WM_EXITSIZEMOVE:
-    if(appData.debugMode) { fprintf(debugFP, "exit size-move, size = %d\n", squareSize); }
     if (hwnd == hwndMain) {
       RECT client;
       doingSizing = FALSE;
@@ -5637,9 +4132,7 @@ WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       GetClientRect(hwnd, &client);
       ResizeBoard(client.right, client.bottom, lastSizing);
       lastSizing = 0;
-      if(appData.debugMode) { fprintf(debugFP, "square size = %d\n", squareSize); }
     }
-    return OnExitSizeMove( &sd, hwnd, wParam, lParam );
     break;
 
   case WM_DESTROY: /* message: window being destroyed */
@@ -5743,7 +4236,7 @@ MyLoadSound(MySound *ms)
   struct stat st;
   FILE *f;
 
-  if (ms->data && ms->flag) free(ms->data);
+  if (ms->data) free(ms->data);
   ms->data = NULL;
 
   switch (ms->name[0]) {
@@ -5764,7 +4257,6 @@ MyLoadSound(MySound *ms)
       HANDLE h = FindResource(hInst, ms->name + 1, "WAVE");
       if (h == NULL) break;
       ms->data = (void *)LoadResource(hInst, h);
-      ms->flag = 0; // not maloced, so cannot be freed!
       if (h == NULL) break;
       ok = TRUE;
     }
@@ -5775,7 +4267,6 @@ MyLoadSound(MySound *ms)
     if (f == NULL) break;
     if (fstat(fileno(f), &st) < 0) break;
     ms->data = malloc(st.st_size);
-    ms->flag = 1;
     if (fread(ms->data, st.st_size, 1, f) < 1) break;
     fclose(f);
     ok = TRUE;
@@ -5783,7 +4274,7 @@ MyLoadSound(MySound *ms)
   }
   if (!ok) {
     char buf[MSG_SIZ];
-      snprintf(buf, MSG_SIZ, _("Error loading sound %s"), ms->name);
+    sprintf(buf, "Error loading sound %s", ms->name);
     DisplayError(buf, GetLastError());
   }
   return ok;
@@ -5793,11 +4284,8 @@ BOOLEAN
 MyPlaySound(MySound *ms)
 {
   BOOLEAN ok = FALSE;
-
-  if(mute) return TRUE; // [HGM] mute: suppress all sound play when muted
   switch (ms->name[0]) {
   case NULLCHAR:
-	if(appData.debugMode) fprintf(debugFP, "silence\n");
     /* Silence */
     ok = TRUE;
     break;
@@ -5827,6 +4315,13 @@ MyPlaySound(MySound *ms)
   /* Don't print an error: this can happen innocently if the sound driver
      is busy; for instance, if another instance of WinBoard is playing
      a sound at about the same time. */
+#if 0
+  if (!ok) {
+    char buf[MSG_SIZ];
+    sprintf(buf, "Error playing sound %s", ms->name);
+    DisplayError(buf, GetLastError());
+  }
+#endif
   return ok;
 }
 
@@ -5849,7 +4344,6 @@ OldOpenFileHook(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
       number = NULL;
     }
     CenterWindow (hDlg, GetWindow (hDlg, GW_OWNER));
-    Translate(hDlg, 1536);
     return FALSE;  /* Allow for further processing */
 
   case WM_COMMAND:
@@ -5869,7 +4363,6 @@ OpenFileHook(HWND hdlg, UINT uiMsg, WPARAM wParam, LPARAM lParam)
   OFNOTIFY *ofnot;
   switch (uiMsg) {
   case WM_INITDIALOG:
-    Translate(hdlg, DLG_IndexNumber);
     ofname = (OPENFILENAME *)lParam;
     number = (UINT *)(ofname->lCustData);
     break;
@@ -5885,7 +4378,7 @@ OpenFileHook(HWND hdlg, UINT uiMsg, WPARAM wParam, LPARAM lParam)
 
 
 FILE *
-OpenFileDialog(HWND hwnd, char *write, char *defName, char *defExt, // [HGM] diag: type of 'write' now string
+OpenFileDialog(HWND hwnd, BOOL write, char *defName, char *defExt,
 	       char *nameFilt, char *dlgTitle, UINT *number,
 	       char fileTitle[MSG_SIZ], char fileName[MSG_SIZ])
 {
@@ -5895,12 +4388,12 @@ OpenFileDialog(HWND hwnd, char *write, char *defName, char *defExt, // [HGM] dia
 
   if (fileName == NULL) fileName = buf1;
   if (defName == NULL) {
-    safeStrCpy(fileName, "*.", 3 );
+    strcpy(fileName, "*.");
     strcat(fileName, defExt);
   } else {
-    safeStrCpy(fileName, defName, MSG_SIZ );
+    strcpy(fileName, defName);
   }
-    if (fileTitle) safeStrCpy(fileTitle, "", MSG_SIZ );
+  if (fileTitle) strcpy(fileTitle, "");
   if (number) *number = 0;
 
   openFileName.lStructSize       = sizeof(OPENFILENAME);
@@ -5917,7 +4410,7 @@ OpenFileDialog(HWND hwnd, char *write, char *defName, char *defExt, // [HGM] dia
   openFileName.lpstrInitialDir   = NULL;
   openFileName.lpstrTitle        = dlgTitle;
   openFileName.Flags = OFN_PATHMUSTEXIST | OFN_HIDEREADONLY 
-    | (write[0] != 'r' ? 0 : OFN_FILEMUSTEXIST) 
+    | (write ? 0 : OFN_FILEMUSTEXIST) 
     | (number ? OFN_ENABLETEMPLATE | OFN_ENABLEHOOK: 0)
     | (oldDialog ? 0 : OFN_EXPLORER);
   openFileName.nFileOffset       = 0;
@@ -5928,18 +4421,18 @@ OpenFileDialog(HWND hwnd, char *write, char *defName, char *defExt, // [HGM] dia
     (LPOFNHOOKPROC) OldOpenFileHook : (LPOFNHOOKPROC) OpenFileHook;
   openFileName.lpTemplateName    = (LPSTR)(oldDialog ? 1536 : DLG_IndexNumber);
 
-  if (write[0] != 'r' ? GetSaveFileName(&openFileName) : 
-                        GetOpenFileName(&openFileName)) {
+  if (write ? GetSaveFileName(&openFileName) : 
+              GetOpenFileName(&openFileName)) {
     /* open the file */
-    f = fopen(openFileName.lpstrFile, write);
+    f = fopen(openFileName.lpstrFile, write ? "a" : "rb");
     if (f == NULL) {
-      MessageBox(hwnd, _("File open failed"), NULL,
+      MessageBox(hwnd, "File open failed", NULL,
 		 MB_OK|MB_ICONEXCLAMATION);
       return NULL;
     }
   } else {
     int err = CommDlgExtendedError();
-    if (err != 0) DisplayError(_("Internal error in file dialog box"), err);
+    if (err != 0) DisplayError("Internal error in file dialog box", err);
     return FALSE;
   }
   return f;
@@ -5957,7 +4450,6 @@ MenuPopup(HWND hwnd, POINT pt, HMENU hmenu, UINT def)
    * menu that TrackPopupMenu displays.
    */
   hmenuTrackPopup = GetSubMenu(hmenu, 0);
-  TranslateOneMenu(10, hmenuTrackPopup);
 
   SetMenuDefaultItem(hmenuTrackPopup, def, FALSE);
 
@@ -6033,7 +4525,8 @@ ResizeEditPlusButtons(HWND hDlg, HWND hText, int sizeX, int sizeY, int newSizeX,
   EndDeferWindowPos(cl.hdwp);
 }
 
-BOOL CenterWindowEx(HWND hwndChild, HWND hwndParent, int mode)
+/* Center one window over another */
+BOOL CenterWindow (HWND hwndChild, HWND hwndParent)
 {
     RECT    rChild, rParent;
     int     wChild, hChild, wParent, hParent;
@@ -6065,13 +4558,7 @@ BOOL CenterWindowEx(HWND hwndChild, HWND hwndParent, int mode)
     }
 
     /* Calculate new Y position, then adjust for screen */
-    if( mode == 0 ) {
-        yNew = rParent.top  + ((hParent - hChild) /2);
-    }
-    else {
-        yNew = rParent.top + GetSystemMetrics( SM_CYCAPTION ) * 2 / 3;
-    }
-
+    yNew = rParent.top  + ((hParent - hChild) /2);
     if (yNew < 0) {
 	yNew = 0;
     } else if ((yNew+hChild) > hScreen) {
@@ -6081,12 +4568,6 @@ BOOL CenterWindowEx(HWND hwndChild, HWND hwndParent, int mode)
     /* Set it, and return */
     return SetWindowPos (hwndChild, NULL,
 			 xNew, yNew, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-}
-
-/* Center one window over another */
-BOOL CenterWindow (HWND hwndChild, HWND hwndParent)
-{
-    return CenterWindowEx( hwndChild, hwndParent, 0 );
 }
 
 /*---------------------------------------------------------------------------*\
@@ -6100,7 +4581,7 @@ InitComboStrings(HANDLE hwndCombo, char **cd)
   SendMessage(hwndCombo, CB_RESETCONTENT, 0, 0);
 
   while (*cd != NULL) {
-    SendMessage(hwndCombo, CB_ADDSTRING, 0, (LPARAM) T_(*cd));
+    SendMessage(hwndCombo, CB_ADDSTRING, 0, (LPARAM) *cd);
     cd++;
   }
 }
@@ -6108,7 +4589,7 @@ InitComboStrings(HANDLE hwndCombo, char **cd)
 void
 InitComboStringsFromOption(HANDLE hwndCombo, char *str)
 {
-  char buf1[MAX_ARG_LEN];
+  char buf1[ARG_MAX];
   int len;
 
   if (str[0] == '@') {
@@ -6141,7 +4622,7 @@ SetStartupDialogEnables(HWND hDlg)
 {
   EnableWindow(GetDlgItem(hDlg, OPT_ChessEngineName),
     IsDlgButtonChecked(hDlg, OPT_ChessEngine) ||
-    (appData.zippyPlay && IsDlgButtonChecked(hDlg, OPT_ChessServer)));
+    appData.zippyPlay && IsDlgButtonChecked(hDlg, OPT_ChessServer));
   EnableWindow(GetDlgItem(hDlg, OPT_SecondChessEngineName),
     IsDlgButtonChecked(hDlg, OPT_ChessEngine));
   EnableWindow(GetDlgItem(hDlg, OPT_ChessServerName),
@@ -6179,10 +4660,10 @@ InitEngineBox(HWND hDlg, HWND hwndCombo, char* nthcp, char* nthd, char* nthdir, 
 
   InitComboStringsFromOption(hwndCombo, nthnames);
   q = QuoteForFilename(nthcp);
-    snprintf(buf, MSG_SIZ, "%s%s%s", q, nthcp, q);
+  sprintf(buf, "%s%s%s", q, nthcp, q);
   if (*nthdir != NULLCHAR) {
     q = QuoteForFilename(nthdir);
-      snprintf(buf + strlen(buf), MSG_SIZ, " /%s=%s%s%s", nthd, q, nthdir, q);
+    sprintf(buf + strlen(buf), " /%s=%s%s%s", nthd, q, nthdir, q);
   }
   if (*nthcp == NULLCHAR) {
     SendMessage(hwndCombo, CB_SETCURSEL, (WPARAM) 0, (LPARAM) 0);
@@ -6203,17 +4684,16 @@ StartupDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   case WM_INITDIALOG:
     /* Center the dialog */
     CenterWindow (hDlg, GetDesktopWindow());
-    Translate(hDlg, DLG_Startup);
     /* Initialize the dialog items */
     InitEngineBox(hDlg, GetDlgItem(hDlg, OPT_ChessEngineName),
 	          appData.firstChessProgram, "fd", appData.firstDirectory,
 		  firstChessProgramNames);
     InitEngineBox(hDlg, GetDlgItem(hDlg, OPT_SecondChessEngineName),
-	          appData.secondChessProgram, singleList ? "fd" : "sd", appData.secondDirectory,
-		  singleList ? firstChessProgramNames : secondChessProgramNames); //[HGM] single: use first list in second combo
+	          appData.secondChessProgram, "sd", appData.secondDirectory,
+		  secondChessProgramNames);
     hwndCombo = GetDlgItem(hDlg, OPT_ChessServerName);
     InitComboStringsFromOption(hwndCombo, icsNames);    
-      snprintf(buf, MSG_SIZ, "%s /icsport=%s", appData.icsHost, appData.icsPort);
+    sprintf(buf, "%s /icsport=%s", appData.icsHost, appData.icsPort);
     if (*appData.icsHelper != NULLCHAR) {
       char *q = QuoteForFilename(appData.icsHelper);
       sprintf(buf + strlen(buf), " /icshelper=%s%s%s", q, appData.icsHelper, q);
@@ -6225,17 +4705,13 @@ StartupDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
       SendMessage(hwndCombo, CB_SETCURSEL, (WPARAM) -1, (LPARAM) 0);
       SendMessage(hwndCombo, WM_SETTEXT, (WPARAM) 0, (LPARAM) buf);
     }
-
-    if (appData.icsActive) {
+    if (chessProgram) {
+      CheckDlgButton(hDlg, OPT_ChessEngine, BST_CHECKED);
+    } else if (appData.icsActive) {
       CheckDlgButton(hDlg, OPT_ChessServer, BST_CHECKED);
-    }
-    else if (appData.noChessProgram) {
+    } else if (appData.noChessProgram) {
       CheckDlgButton(hDlg, OPT_View, BST_CHECKED);
     }
-    else {
-      CheckDlgButton(hDlg, OPT_ChessEngine, BST_CHECKED);
-    }
-
     SetStartupDialogEnables(hDlg);
     return TRUE;
 
@@ -6243,26 +4719,23 @@ StartupDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     switch (LOWORD(wParam)) {
     case IDOK:
       if (IsDlgButtonChecked(hDlg, OPT_ChessEngine)) {
-        safeStrCpy(buf, "/fcp=", sizeof(buf)/sizeof(buf[0]) );
+        strcpy(buf, "/fcp=");
 	GetDlgItemText(hDlg, OPT_ChessEngineName, buf + strlen(buf), sizeof(buf) - strlen(buf));
         p = buf;
-	comboLine = strdup(p+5); // [HGM] recent: remember complete line of first combobox
 	ParseArgs(StringGet, &p);
-	safeStrCpy(buf, singleList ? "/fcp=" : "/scp=", sizeof(buf)/sizeof(buf[0]) );
+        strcpy(buf, "/scp=");
 	GetDlgItemText(hDlg, OPT_SecondChessEngineName, buf + strlen(buf), sizeof(buf) - strlen(buf));
         p = buf;
-	SwapEngines(singleList); // temporarily swap first and second, to load a second 'first', ...
 	ParseArgs(StringGet, &p);
-	SwapEngines(singleList); // ... and then make it 'second'
 	appData.noChessProgram = FALSE;
 	appData.icsActive = FALSE;
       } else if (IsDlgButtonChecked(hDlg, OPT_ChessServer)) {
-        safeStrCpy(buf, "/ics /icshost=", sizeof(buf)/sizeof(buf[0]) );
+        strcpy(buf, "/ics /icshost=");
 	GetDlgItemText(hDlg, OPT_ChessServerName, buf + strlen(buf), sizeof(buf) - strlen(buf));
         p = buf;
 	ParseArgs(StringGet, &p);
 	if (appData.zippyPlay) {
-	  safeStrCpy(buf, "/fcp=", sizeof(buf)/sizeof(buf[0]) );
+	  strcpy(buf, "/fcp=");
   	  GetDlgItemText(hDlg, OPT_ChessEngineName, buf + strlen(buf), sizeof(buf) - strlen(buf));
 	  p = buf;
 	  ParseArgs(StringGet, &p);
@@ -6271,8 +4744,8 @@ StartupDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 	appData.noChessProgram = TRUE;
 	appData.icsActive = FALSE;
       } else {
-	MessageBox(hDlg, _("Choose an option, or cancel to exit"),
-		   _("Option Error"), MB_OK|MB_ICONEXCLAMATION);
+	MessageBox(hDlg, "Choose an option, or cancel to exit",
+		   "Option Error", MB_OK|MB_ICONEXCLAMATION);
 	return TRUE;
       }
       if (IsDlgButtonChecked(hDlg, OPT_AnyAdditional)) {
@@ -6290,7 +4763,7 @@ StartupDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     case IDM_HELPCONTENTS:
       if (!WinHelp (hDlg, "winboard.hlp", HELP_KEY,(DWORD)(LPSTR)"CONTENTS")) {
 	MessageBox (GetFocus(),
-		    _("Unable to activate help"),
+		    "Unable to activate help",
 		    szAppName, MB_SYSTEMMODAL|MB_OK|MB_ICONHAND);
       }
       break;
@@ -6319,8 +4792,6 @@ About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     /* Center the dialog over the application window */
     CenterWindow (hDlg, GetWindow (hDlg, GW_OWNER));
     SetDlgItemText(hDlg, ABOUTBOX_Version, programVersion);
-    Translate(hDlg, ABOUTBOX);
-    JAWS_COPYRIGHT
     return (TRUE);
 
   case WM_COMMAND: /* message: received a command */
@@ -6353,7 +4824,6 @@ CommentDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   switch (message) {
   case WM_INITDIALOG: /* message: initialize dialog box */
     /* Initialize the dialog items */
-    Translate(hDlg, DLG_EditComment);
     hwndText = GetDlgItem(hDlg, OPT_CommentText);
     SetDlgItemText(hDlg, OPT_CommentText, commentText);
     EnableWindow(GetDlgItem(hDlg, OPT_CancelComment), editComment);
@@ -6376,18 +4846,18 @@ CommentDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
       GetClientRect(hDlg, &rect);
       sizeX = rect.right;
       sizeY = rect.bottom;
-      if (wpComment.x != CW_USEDEFAULT && wpComment.y != CW_USEDEFAULT &&
-	  wpComment.width != CW_USEDEFAULT && wpComment.height != CW_USEDEFAULT) {
+      if (commentX != CW_USEDEFAULT && commentY != CW_USEDEFAULT &&
+	  commentW != CW_USEDEFAULT && commentH != CW_USEDEFAULT) {
 	WINDOWPLACEMENT wp;
-	EnsureOnScreen(&wpComment.x, &wpComment.y, 0, 0);
+	EnsureOnScreen(&commentX, &commentY);
 	wp.length = sizeof(WINDOWPLACEMENT);
 	wp.flags = 0;
 	wp.showCmd = SW_SHOW;
 	wp.ptMaxPosition.x = wp.ptMaxPosition.y = 0;
-	wp.rcNormalPosition.left = wpComment.x;
-	wp.rcNormalPosition.right = wpComment.x + wpComment.width;
-	wp.rcNormalPosition.top = wpComment.y;
-	wp.rcNormalPosition.bottom = wpComment.y + wpComment.height;
+	wp.rcNormalPosition.left = commentX;
+	wp.rcNormalPosition.right = commentX + commentW;
+	wp.rcNormalPosition.top = commentY;
+	wp.rcNormalPosition.bottom = commentY + commentH;
 	SetWindowPlacement(hDlg, &wp);
 
 	GetClientRect(hDlg, &rect);
@@ -6399,7 +4869,6 @@ CommentDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 	sizeY = newSizeY;
       }
     }
-    SendDlgItemMessage( hDlg, OPT_CommentText, EM_SETEVENTMASK, 0, ENM_MOUSEEVENTS | ENM_KEYEVENTS );
     return FALSE;
 
   case WM_COMMAND: /* message: received a command */
@@ -6444,42 +4913,6 @@ CommentDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     }
     break;
 
-  case WM_NOTIFY: // [HGM] vari: cloned from whistory.c
-        if( wParam == OPT_CommentText ) {
-            MSGFILTER * lpMF = (MSGFILTER *) lParam;
-
-            if( lpMF->msg == WM_RBUTTONDOWN && (lpMF->wParam & (MK_CONTROL | MK_SHIFT)) == 0 ||
-                lpMF->msg == WM_CHAR && lpMF->wParam == '\022' ) {
-                POINTL pt;
-                LRESULT index;
-
-                pt.x = LOWORD( lpMF->lParam );
-                pt.y = HIWORD( lpMF->lParam );
-
-                if(lpMF->msg == WM_CHAR) {
-                        CHARRANGE sel;
-                        SendDlgItemMessage( hDlg, OPT_CommentText, EM_EXGETSEL, 0, (LPARAM) &sel );
-                        index = sel.cpMin;
-                } else
-                index = SendDlgItemMessage( hDlg, OPT_CommentText, EM_CHARFROMPOS, 0, (LPARAM) &pt );
-
-		hwndText = GetDlgItem(hDlg, OPT_CommentText); // cloned from above
-		len = GetWindowTextLength(hwndText);
-		str = (char *) malloc(len + 1);
-		GetWindowText(hwndText, str, len + 1);
-		ReplaceComment(commentIndex, str);
-		if(commentIndex != currentMove) ToNrEvent(commentIndex);
-                LoadVariation( index, str ); // [HGM] also does the actual moving to it, now
-		free(str);
-
-                /* Zap the message for good: apparently, returning non-zero is not enough */
-                lpMF->msg = WM_USER;
-
-                return TRUE;
-            }
-        }
-        break;
-
   case WM_SIZE:
     newSizeX = LOWORD(lParam);
     newSizeY = HIWORD(lParam);
@@ -6504,7 +4937,7 @@ EitherCommentPopUp(int index, char *title, char *str, BOOLEAN edit)
   FARPROC lpProc;
   char *p, *q;
 
-  CheckMenuItem(GetMenu(hwndMain), IDM_Comment, edit ? MF_CHECKED : MF_UNCHECKED);
+  CheckMenuItem(GetMenu(hwndMain), IDM_EditComment, edit ? MF_CHECKED : MF_UNCHECKED);
 
   if (str == NULL) str = "";
   p = (char *) malloc(2 * strlen(str) + 2);
@@ -6523,14 +4956,14 @@ EitherCommentPopUp(int index, char *title, char *str, BOOLEAN edit)
 
   if (commentDialog) {
     SendMessage(commentDialog, WM_INITDIALOG, 0, 0);
-    if (!commentUp) ShowWindow(commentDialog, SW_SHOW);
+    if (!commentDialogUp) ShowWindow(commentDialog, SW_SHOW);
   } else {
     lpProc = MakeProcInstance((FARPROC)CommentDialog, hInst);
     CreateDialog(hInst, MAKEINTRESOURCE(DLG_EditComment),
 		 hwndMain, (DLGPROC)lpProc);
     FreeProcInstance(lpProc);
   }
-  commentUp = TRUE;
+  commentDialogUp = TRUE;
 }
 
 
@@ -6545,13 +4978,15 @@ TypeInMoveDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
   char move[MSG_SIZ];
   HWND hInput;
+  ChessMove moveType;
+  int fromX, fromY, toX, toY;
+  char promoChar;
 
   switch (message) {
   case WM_INITDIALOG:
     move[0] = (char) lParam;
     move[1] = NULLCHAR;
-    CenterWindowEx(hDlg, GetWindow(hDlg, GW_OWNER), 1 );
-    Translate(hDlg, DLG_TypeInMove);
+    CenterWindow(hDlg, GetWindow(hDlg, GW_OWNER));
     hInput = GetDlgItem(hDlg, OPT_Move);
     SetWindowText(hInput, move);
     SetFocus(hInput);
@@ -6561,10 +4996,20 @@ TypeInMoveDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   case WM_COMMAND:
     switch (LOWORD(wParam)) {
     case IDOK:
-
-      shiftKey = GetKeyState(VK_SHIFT) < 0; // [HGM] remember last shift status
-      GetDlgItemText(hDlg, OPT_Move, move, sizeof(move));
-      TypeInDoneEvent(move);
+      if (gameMode != EditGame && currentMove != forwardMostMove && 
+	gameMode != Training) {
+	DisplayMoveError("Displayed move is not current");
+      } else {
+	GetDlgItemText(hDlg, OPT_Move, move, sizeof(move));
+	if (ParseOneMove(move, gameMode == EditPosition ? blackPlaysFirst : currentMove, 
+	  &moveType, &fromX, &fromY, &toX, &toY, &promoChar)) {
+	  if (gameMode != Training)
+	      forwardMostMove = currentMove;
+	  UserMoveEvent(fromX, fromY, toX, toY, promoChar);	
+	} else {
+	  DisplayMoveError("Could not parse move");
+	}
+      }
       EndDialog(hDlg, TRUE);
       return TRUE;
     case IDCANCEL:
@@ -6582,72 +5027,18 @@ VOID
 PopUpMoveDialog(char firstchar)
 {
     FARPROC lpProc;
-
+    
+    if ((gameMode == BeginningOfGame && !appData.icsActive) || 
+        gameMode == MachinePlaysWhite || gameMode == MachinePlaysBlack ||
+	gameMode == AnalyzeMode || gameMode == EditGame || 
+	gameMode == EditPosition || gameMode == IcsExamining ||
+	gameMode == IcsPlayingWhite || gameMode == IcsPlayingBlack ||
+	gameMode == Training) {
       lpProc = MakeProcInstance((FARPROC)TypeInMoveDialog, hInst);
       DialogBoxParam(hInst, MAKEINTRESOURCE(DLG_TypeInMove),
 	hwndMain, (DLGPROC)lpProc, (LPARAM)firstchar);
       FreeProcInstance(lpProc);
-}
-
-/*---------------------------------------------------------------------------*\
- *
- * Type-in name dialog functions
- * 
-\*---------------------------------------------------------------------------*/
-
-LRESULT CALLBACK
-TypeInNameDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-  char move[MSG_SIZ];
-  HWND hInput;
-
-  switch (message) {
-  case WM_INITDIALOG:
-    move[0] = (char) lParam;
-    move[1] = NULLCHAR;
-    CenterWindowEx(hDlg, GetWindow(hDlg, GW_OWNER), 1 );
-    Translate(hDlg, DLG_TypeInName);
-    hInput = GetDlgItem(hDlg, OPT_Name);
-    SetWindowText(hInput, move);
-    SetFocus(hInput);
-    SendMessage(hInput, EM_SETSEL, (WPARAM)9999, (LPARAM)9999);
-    return FALSE;
-
-  case WM_COMMAND:
-    switch (LOWORD(wParam)) {
-    case IDOK:
-      GetDlgItemText(hDlg, OPT_Name, move, sizeof(move));
-      appData.userName = strdup(move);
-      SetUserLogo();
-      SetGameInfo();
-      if(gameMode == MachinePlaysWhite || gameMode == MachinePlaysBlack) {
-	snprintf(move, MSG_SIZ, "%s vs. %s", gameInfo.white, gameInfo.black);
-	DisplayTitle(move);
-      }
-
-
-      EndDialog(hDlg, TRUE);
-      return TRUE;
-    case IDCANCEL:
-      EndDialog(hDlg, FALSE);
-      return TRUE;
-    default:
-      break;
     }
-    break;
-  }
-  return FALSE;
-}
-
-VOID
-PopUpNameDialog(char firstchar)
-{
-    FARPROC lpProc;
-    
-      lpProc = MakeProcInstance((FARPROC)TypeInNameDialog, hInst);
-      DialogBoxParam(hInst, MAKEINTRESOURCE(DLG_TypeInName),
-	hwndMain, (DLGPROC)lpProc, (LPARAM)firstchar);
-      FreeProcInstance(lpProc);
 }
 
 /*---------------------------------------------------------------------------*\
@@ -6703,7 +5094,6 @@ ErrorPopDown()
   if (errorDialog == NULL) return;
   DestroyWindow(errorDialog);
   errorDialog = NULL;
-  if(errorExitStatus) ExitEvent(errorExitStatus);
 }
 
 LRESULT CALLBACK
@@ -6715,22 +5105,9 @@ ErrorDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   switch (message) {
   case WM_INITDIALOG:
     GetWindowRect(hDlg, &rChild);
-
-    /*
     SetWindowPos(hDlg, NULL, rChild.left,
       rChild.top + boardRect.top - (rChild.bottom - rChild.top), 
       0, 0, SWP_NOZORDER|SWP_NOSIZE);
-    */
-
-    /* 
-        [AS] It seems that the above code wants to move the dialog up in the "caption
-        area" of the main window, but it uses the dialog height as an hard-coded constant,
-        and it doesn't work when you resize the dialog.
-        For now, just give it a default position.
-    */
-    SetWindowPos(hDlg, NULL, boardRect.left+8, boardRect.top+8, 0, 0, SWP_NOZORDER|SWP_NOSIZE);
-    Translate(hDlg, DLG_Error);
-
     errorDialog = hDlg;
     SetWindowText(hDlg, errorTitle);
     hwndText = GetDlgItem(hDlg, OPT_ErrorText);
@@ -6752,74 +5129,6 @@ ErrorDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   }
   return FALSE;
 }
-
-#ifdef GOTHIC
-HWND gothicDialog = NULL;
-
-LRESULT CALLBACK
-GothicDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-  HANDLE hwndText;
-  RECT rChild;
-  int height = GetSystemMetrics(SM_CYCAPTION)+GetSystemMetrics(SM_CYFRAME);
-
-  switch (message) {
-  case WM_INITDIALOG:
-    GetWindowRect(hDlg, &rChild);
-
-    SetWindowPos(hDlg, NULL, wpMain.x, wpMain.y-height, wpMain.width, height,
-                                                             SWP_NOZORDER);
-
-    /* 
-        [AS] It seems that the above code wants to move the dialog up in the "caption
-        area" of the main window, but it uses the dialog height as an hard-coded constant,
-        and it doesn't work when you resize the dialog.
-        For now, just give it a default position.
-    */
-    gothicDialog = hDlg;
-    SetWindowText(hDlg, errorTitle);
-    hwndText = GetDlgItem(hDlg, OPT_ErrorText);
-    SetDlgItemText(hDlg, OPT_ErrorText, errorMessage);
-    return FALSE;
-
-  case WM_COMMAND:
-    switch (LOWORD(wParam)) {
-    case IDOK:
-    case IDCANCEL:
-      if (errorDialog == hDlg) errorDialog = NULL;
-      DestroyWindow(hDlg);
-      return TRUE;
-
-    default:
-      break;
-    }
-    break;
-  }
-  return FALSE;
-}
-
-VOID
-GothicPopUp(char *title, VariantClass variant)
-{
-  FARPROC lpProc;
-  static char *lastTitle;
-
-  strncpy(errorTitle, title, sizeof(errorTitle));
-  errorTitle[sizeof(errorTitle) - 1] = '\0';
-
-  if(lastTitle != title && gothicDialog != NULL) {
-    DestroyWindow(gothicDialog);
-    gothicDialog = NULL;
-  }
-  if(variant != VariantNormal && gothicDialog == NULL) {
-    title = lastTitle;
-    lpProc = MakeProcInstance((FARPROC)GothicDialog, hInst);
-    CreateDialog(hInst, MAKEINTRESOURCE(DLG_Error),
-		 hwndMain, (DLGPROC)lpProc);
-    FreeProcInstance(lpProc);
-  }
-}
-#endif
 
 /*---------------------------------------------------------------------------*\
  *
@@ -6867,7 +5176,76 @@ NextInHistory()
 {
   if (histP == histIn) return NULL;
   histP = (histP + 1) % HISTORY_SIZE;
-  return history[histP];   
+  return history[histP];
+}
+
+typedef struct {
+  char *item;
+  char *command;
+  BOOLEAN getname;
+  BOOLEAN immediate;
+} IcsTextMenuEntry;
+#define ICS_TEXT_MENU_SIZE (IDM_CommandXLast - IDM_CommandX + 1)
+IcsTextMenuEntry icsTextMenuEntry[ICS_TEXT_MENU_SIZE];
+
+void
+ParseIcsTextMenu(char *icsTextMenuString)
+{
+  int flags = 0;
+  IcsTextMenuEntry *e = icsTextMenuEntry;
+  char *p = icsTextMenuString;
+  while (e->item != NULL && e < icsTextMenuEntry + ICS_TEXT_MENU_SIZE) {
+    free(e->item);
+    e->item = NULL;
+    if (e->command != NULL) {
+      free(e->command);
+      e->command = NULL;
+    }
+    e++;
+  }
+  e = icsTextMenuEntry;
+  while (*p && e < icsTextMenuEntry + ICS_TEXT_MENU_SIZE) {
+    if (*p == ';' || *p == '\n') {
+      e->item = strdup("-");
+      e->command = NULL;
+      p++;
+    } else if (*p == '-') {
+      e->item = strdup("-");
+      e->command = NULL;
+      p++;
+      if (*p) p++;
+    } else {
+      char *q, *r, *s, *t;
+      char c;
+      q = strchr(p, ',');
+      if (q == NULL) break;
+      *q = NULLCHAR;
+      r = strchr(q + 1, ',');
+      if (r == NULL) break;
+      *r = NULLCHAR;
+      s = strchr(r + 1, ',');
+      if (s == NULL) break;
+      *s = NULLCHAR;
+      c = ';';
+      t = strchr(s + 1, c);
+      if (t == NULL) {
+	c = '\n';
+	t = strchr(s + 1, c);
+      }
+      if (t != NULL) *t = NULLCHAR;
+      e->item = strdup(p);
+      e->command = strdup(q + 1);
+      e->getname = *(r + 1) != '0';
+      e->immediate = *(s + 1) != '0';
+      *q = ',';
+      *r = ',';
+      *s = ',';
+      if (t == NULL) break;
+      *t = c;
+      p = t + 1;
+    }
+    e++;
+  } 
 }
 
 HMENU
@@ -6880,14 +5258,13 @@ LoadIcsTextMenu(IcsTextMenuEntry *e)
   while (e->item) {
     if (strcmp(e->item, "-") == 0) {
       AppendMenu(h, MF_SEPARATOR, 0, 0);
-    } else { // [HGM] re-written a bit to use only one AppendMenu call for both cases (| or no |)
-      int flags = MF_STRING, j = 0;
+    } else {
       if (e->item[0] == '|') {
-	flags |= MF_MENUBARBREAK;
-        j++;
+	AppendMenu(h, MF_STRING|MF_MENUBARBREAK,
+		   IDM_CommandX + i, &e->item[1]);
+      } else {
+	AppendMenu(h, MF_STRING, IDM_CommandX + i, e->item);
       }
-      if(!strcmp(e->command, "none")) flags |= MF_GRAYED; // [HGM] chatclick: provide inactive dummy
-      AppendMenu(h, flags, IDM_CommandX + i, e->item + j);
     }
     e++;
     i++;
@@ -6952,13 +5329,11 @@ CommandX(HWND hwnd, char *command, BOOLEAN getname, BOOLEAN immediate)
     SendMessage(hwnd, EM_GETSELTEXT, 0, (LPARAM) name);
   }
   if (immediate) {
-    if(strstr(command, "%s")) snprintf(buf, MSG_SIZ, command, name); else
-    snprintf(buf, MSG_SIZ, "%s %s", command, name);
+    sprintf(buf, "%s %s", command, name);
     SetWindowText(hInput, buf);
     SendMessage(hInput, WM_CHAR, '\r', 0);
   } else {
-    if(!strcmp(command, "chat")) { ChatPopUp(name); return; }
-      snprintf(buf, MSG_SIZ, "%s %s ", command, name); /* trailing space */
+    sprintf(buf, "%s %s ", command, name); /* trailing space */
     SetWindowText(hInput, buf);
     sel.cpMin = 999999;
     sel.cpMax = 999999;
@@ -6976,7 +5351,6 @@ ConsoleTextSubclass(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
   switch (message) {
   case WM_KEYDOWN:
     if (!(GetKeyState(VK_CONTROL) & ~1)) break;
-    if(wParam=='R') return 0;
     switch (wParam) {
     case VK_PRIOR:
       SendMessage(hwnd, EM_LINESCROLL, 0, -999999);
@@ -6990,7 +5364,6 @@ ConsoleTextSubclass(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
     break;
   case WM_CHAR:
-   if(wParam != '\022') {
     if (wParam == '\t') {
       if (GetKeyState(VK_SHIFT) < 0) {
 	/* shifted */
@@ -7006,12 +5379,16 @@ ConsoleTextSubclass(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       }
     } else {
       hInput = GetDlgItem(hwndConsole, OPT_ConsoleInput);
-      JAWS_DELETE( SetFocus(hInput); )
+      SetFocus(hInput);
       SendMessage(hInput, message, wParam, lParam);
     }
     return 0;
-   } // [HGM] navigate: for Ctrl+R, flow into next case (moved up here) to summon up menu
-   lParam = -1;
+  case WM_PASTE:
+    hInput = GetDlgItem(hwndConsole, OPT_ConsoleInput);
+    SetFocus(hInput);
+    return SendMessage(hInput, message, wParam, lParam);
+  case WM_MBUTTONDOWN:
+    return SendMessage(hwnd, WM_COMMAND, MAKEWPARAM(IDM_QuickPaste, 0), 0);
   case WM_RBUTTONDOWN:
     if (!(GetKeyState(VK_SHIFT) & ~1)) {
       /* Move selection here if it was empty */
@@ -7020,12 +5397,18 @@ ConsoleTextSubclass(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       pt.y = HIWORD(lParam);
       SendMessage(hwnd, EM_EXGETSEL, 0, (LPARAM)&sel);
       if (sel.cpMin == sel.cpMax) {
-        if(lParam != -1) sel.cpMin = SendMessage(hwnd, EM_CHARFROMPOS, 0, (LPARAM)&pt); /*doc is wrong*/
+        sel.cpMin = SendMessage(hwnd, EM_CHARFROMPOS, 0, (LPARAM)&pt); /*doc is wrong*/
 	sel.cpMax = sel.cpMin;
 	SendMessage(hwnd, EM_EXSETSEL, 0, (LPARAM)&sel);
       }
       SendMessage(hwnd, EM_HIDESELECTION, FALSE, FALSE);
-{ // [HGM] chatclick: code moved here from WM_RBUTTONUP case, to have menu appear on down-click
+    }
+    return 0;
+  case WM_RBUTTONUP:
+    if (GetKeyState(VK_SHIFT) & ~1) {
+      SendDlgItemMessage(hwndConsole, OPT_ConsoleText, 
+        WM_COMMAND, MAKEWPARAM(IDM_QuickPaste, 0), 0);
+    } else {
       POINT pt;
       HMENU hmenu = LoadIcsTextMenu(icsTextMenuEntry);
       SendMessage(hwnd, EM_EXGETSEL, 0, (LPARAM)&sel);
@@ -7036,25 +5419,11 @@ ConsoleTextSubclass(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
       if (!IsClipboardFormatAvailable(CF_TEXT)) {
         EnableMenuItem(hmenu, IDM_Paste, MF_BYCOMMAND|MF_GRAYED);
       }
-      pt.x = LOWORD(lParam)-30; // [HGM] chatclick: make menu pop up with pointer above upper-right item
-      pt.y = HIWORD(lParam)-10; //       make it appear as if mouse moved there, so it will be selected on up-click
-      PostMessage(hwnd, WM_MOUSEMOVE, wParam, lParam+5);
+      pt.x = LOWORD(lParam);
+      pt.y = HIWORD(lParam);
       MenuPopup(hwnd, pt, hmenu, -1);
-}
     }
     return 0;
-  case WM_RBUTTONUP:
-    if (GetKeyState(VK_SHIFT) & ~1) {
-      SendDlgItemMessage(hwndConsole, OPT_ConsoleText, 
-        WM_COMMAND, MAKEWPARAM(IDM_QuickPaste, 0), 0);
-    }
-    return 0;
-  case WM_PASTE:
-    hInput = GetDlgItem(hwndConsole, OPT_ConsoleInput);
-    SetFocus(hInput);
-    return SendMessage(hInput, message, wParam, lParam);
-  case WM_MBUTTONDOWN:
-    return SendMessage(hwnd, WM_COMMAND, MAKEWPARAM(IDM_QuickPaste, 0), 0);
   case WM_COMMAND:
     switch (LOWORD(wParam)) {
     case IDM_QuickPaste:
@@ -7171,7 +5540,6 @@ ConsoleInputSubclass(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     case '\021': /* Ctrl+Q */
       quoteNextChar = TRUE;
       return 0;
-    JAWS_REPLAY
     default:
       break;
     }
@@ -7265,42 +5633,24 @@ ConsoleInputSubclass(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 LRESULT CALLBACK
 ConsoleWndProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-  static SnapData sd;
-  HWND hText, hInput;
+  static HWND hText, hInput, hFocus;
+  InputSource *is = consoleInputSource;
   RECT rect;
   static int sizeX, sizeY;
   int newSizeX, newSizeY;
   MINMAXINFO *mmi;
-  WORD wMask;
-
-  hText = GetDlgItem(hDlg, OPT_ConsoleText);
-  hInput = GetDlgItem(hDlg, OPT_ConsoleInput);
 
   switch (message) {
-  case WM_NOTIFY:
-    if (((NMHDR*)lParam)->code == EN_LINK)
-    {
-      ENLINK *pLink = (ENLINK*)lParam;
-      if (pLink->msg == WM_LBUTTONUP)
-      {
-        TEXTRANGE tr;
-
-        tr.chrg = pLink->chrg;
-        tr.lpstrText = malloc(1+tr.chrg.cpMax-tr.chrg.cpMin);
-        SendMessage(hText, EM_GETTEXTRANGE, 0, (LPARAM)&tr);
-        ShellExecute(NULL, "open", tr.lpstrText, NULL, NULL, SW_SHOW);
-        free(tr.lpstrText);
-      }
-    }
-    break;
   case WM_INITDIALOG: /* message: initialize dialog box */
     hwndConsole = hDlg;
+    hText = GetDlgItem(hDlg, OPT_ConsoleText);
+    hInput = GetDlgItem(hDlg, OPT_ConsoleInput);
     SetFocus(hInput);
     consoleTextWindowProc = (WNDPROC)
-      SetWindowLongPtr(hText, GWLP_WNDPROC, (LONG_PTR) ConsoleTextSubclass);
+      SetWindowLong(hText, GWL_WNDPROC, (LONG) ConsoleTextSubclass);
     SendMessage(hText, EM_SETBKGNDCOLOR, FALSE, consoleBackgroundColor);
     consoleInputWindowProc = (WNDPROC)
-      SetWindowLongPtr(hInput, GWLP_WNDPROC, (LONG_PTR) ConsoleInputSubclass);
+      SetWindowLong(hInput, GWL_WNDPROC, (LONG) ConsoleInputSubclass);
     SendMessage(hInput, EM_SETBKGNDCOLOR, FALSE, consoleBackgroundColor);
     Colorize(ColorNormal, TRUE);
     SendMessage(hInput, EM_SETCHARFORMAT, SCF_ALL, (LPARAM) &consoleCF);
@@ -7308,46 +5658,20 @@ ConsoleWndProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     GetClientRect(hDlg, &rect);
     sizeX = rect.right;
     sizeY = rect.bottom;
-    if (wpConsole.x != CW_USEDEFAULT && wpConsole.y != CW_USEDEFAULT &&
-	wpConsole.width != CW_USEDEFAULT && wpConsole.height != CW_USEDEFAULT) {
+    if (consoleX != CW_USEDEFAULT && consoleY != CW_USEDEFAULT &&
+	consoleW != CW_USEDEFAULT && consoleH != CW_USEDEFAULT) {
       WINDOWPLACEMENT wp;
-      EnsureOnScreen(&wpConsole.x, &wpConsole.y, 0, 0);
+      EnsureOnScreen(&consoleX, &consoleY);
       wp.length = sizeof(WINDOWPLACEMENT);
       wp.flags = 0;
       wp.showCmd = SW_SHOW;
       wp.ptMaxPosition.x = wp.ptMaxPosition.y = 0;
-      wp.rcNormalPosition.left = wpConsole.x;
-      wp.rcNormalPosition.right = wpConsole.x + wpConsole.width;
-      wp.rcNormalPosition.top = wpConsole.y;
-      wp.rcNormalPosition.bottom = wpConsole.y + wpConsole.height;
+      wp.rcNormalPosition.left = consoleX;
+      wp.rcNormalPosition.right = consoleX + consoleW;
+      wp.rcNormalPosition.top = consoleY;
+      wp.rcNormalPosition.bottom = consoleY + consoleH;
       SetWindowPlacement(hDlg, &wp);
     }
-
-   // [HGM] Chessknight's change 2004-07-13
-   else { /* Determine Defaults */
-       WINDOWPLACEMENT wp;
-       wpConsole.x = wpMain.width + 1;
-       wpConsole.y = wpMain.y;
-       wpConsole.width = screenWidth -  wpMain.width;
-       wpConsole.height = wpMain.height;
-       EnsureOnScreen(&wpConsole.x, &wpConsole.y, 0, 0);
-       wp.length = sizeof(WINDOWPLACEMENT);
-       wp.flags = 0;
-       wp.showCmd = SW_SHOW;
-       wp.ptMaxPosition.x = wp.ptMaxPosition.y = 0;
-       wp.rcNormalPosition.left = wpConsole.x;
-       wp.rcNormalPosition.right = wpConsole.x + wpConsole.width;
-       wp.rcNormalPosition.top = wpConsole.y;
-       wp.rcNormalPosition.bottom = wpConsole.y + wpConsole.height;
-       SetWindowPlacement(hDlg, &wp);
-    }
-
-   // Allow hText to highlight URLs and send notifications on them
-   wMask = (WORD) SendMessage(hText, EM_GETEVENTMASK, 0, 0L);
-   SendMessage(hText, EM_SETEVENTMASK, 0, wMask | ENM_LINK);
-   SendMessage(hText, EM_AUTOURLDETECT, TRUE, 0L);
-   SetWindowLongPtr(hText, GWLP_USERDATA, 79); // initialize the text window's width
-
     return FALSE;
 
   case WM_SETFOCUS:
@@ -7395,22 +5719,7 @@ ConsoleWndProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     mmi->ptMinTrackSize.x = 100;
     mmi->ptMinTrackSize.y = 100;
     break;
-
-  /* [AS] Snapping */
-  case WM_ENTERSIZEMOVE:
-    return OnEnterSizeMove( &sd, hDlg, wParam, lParam );
-
-  case WM_SIZING:
-    return OnSizing( &sd, hDlg, wParam, lParam );
-
-  case WM_MOVING:
-    return OnMoving( &sd, hDlg, wParam, lParam );
-
-  case WM_EXITSIZEMOVE:
-  	UpdateICSWidth(hText);
-    return OnExitSizeMove( &sd, hDlg, wParam, lParam );
   }
-
   return DefWindowProc(hDlg, message, wParam, lParam);
 }
 
@@ -7518,52 +5827,19 @@ ConsoleOutput(char* data, int length, int forceVisible)
 
 
 void
-DisplayHoldingsCount(HDC hdc, int x, int y, int rightAlign, int copyNumber)
-{
-  char buf[100];
-  char *str;
-  COLORREF oldFg, oldBg;
-  HFONT oldFont;
-  RECT rect;
-
-  if(copyNumber > 1)
-    snprintf(buf, sizeof(buf)/sizeof(buf[0]),"%d", copyNumber); else buf[0] = 0;
-
-  oldFg = SetTextColor(hdc, RGB(255, 255, 255)); /* white */
-  oldBg = SetBkColor(hdc, RGB(0, 0, 0)); /* black */
-  oldFont = SelectObject(hdc, font[boardSize][CLOCK_FONT]->hf);
-
-  rect.left = x;
-  rect.right = x + squareSize;
-  rect.top  = y;
-  rect.bottom = y + squareSize;
-  str = buf;
-
-  ExtTextOut(hdc, x + MESSAGE_LINE_LEFTMARGIN
-                    + (rightAlign ? (squareSize*2)/3 : 0),
-             y, ETO_CLIPPED|ETO_OPAQUE,
-             &rect, str, strlen(str), NULL);
-
-  (void) SetTextColor(hdc, oldFg);
-  (void) SetBkColor(hdc, oldBg);
-  (void) SelectObject(hdc, oldFont);
-}
-
-void
 DisplayAClock(HDC hdc, int timeRemaining, int highlight,
-              RECT *rect, char *color, char *flagFell)
+	      RECT *rect, char *color)
 {
   char buf[100];
   char *str;
   COLORREF oldFg, oldBg;
   HFONT oldFont;
 
-  if (twoBoards && partnerUp) return;
   if (appData.clockMode) {
     if (tinyLayout)
-      snprintf(buf, sizeof(buf)/sizeof(buf[0]), "%c %s %s", color[0], TimeString(timeRemaining), flagFell);
+      sprintf(buf, "%c %s", color[0], TimeString(timeRemaining));
     else
-      snprintf(buf, sizeof(buf)/sizeof(buf[0]), "%s:%c%s %s", color, (logoHeight>0 ? 0 : ' '), TimeString(timeRemaining), flagFell);
+      sprintf(buf, "%s: %s", color, TimeString(timeRemaining));
     str = buf;
   } else {
     str = color;
@@ -7578,22 +5854,10 @@ DisplayAClock(HDC hdc, int timeRemaining, int highlight,
   }
   oldFont = SelectObject(hdc, font[boardSize][CLOCK_FONT]->hf);
 
-  JAWS_SILENCE
-
   ExtTextOut(hdc, rect->left + MESSAGE_LINE_LEFTMARGIN,
 	     rect->top, ETO_CLIPPED|ETO_OPAQUE,
 	     rect, str, strlen(str), NULL);
-  if(logoHeight > 0 && appData.clockMode) {
-      RECT r;
-      str += strlen(color)+2;
-      r.top = rect->top + logoHeight/2;
-      r.left = rect->left;
-      r.right = rect->right;
-      r.bottom = rect->bottom;
-      ExtTextOut(hdc, rect->left + MESSAGE_LINE_LEFTMARGIN,
-	         r.top, ETO_CLIPPED|ETO_OPAQUE,
-	         &r, str, strlen(str), NULL);
-  }
+
   (void) SetTextColor(hdc, oldFg);
   (void) SetBkColor(hdc, oldBg);
   (void) SelectObject(hdc, oldFont);
@@ -7605,15 +5869,6 @@ DoReadFile(HANDLE hFile, char *buf, int count, DWORD *outCount,
 	   OVERLAPPED *ovl)
 {
   int ok, err;
-
-  /* [AS]  */
-  if( count <= 0 ) {
-    if (appData.debugMode) {
-      fprintf( debugFP, "DoReadFile: trying to read past end of buffer, overflow = %d\n", count );
-    }
-
-    return ERROR_INVALID_USER_BUFFER;
-  }
 
   ResetEvent(ovl->hEvent);
   ovl->Offset = ovl->OffsetHigh = 0;
@@ -7657,28 +5912,6 @@ DoWriteFile(HANDLE hFile, char *buf, int count, DWORD *outCount,
   return err;
 }
 
-/* [AS] If input is line by line and a line exceed the buffer size, force an error */
-void CheckForInputBufferFull( InputSource * is )
-{
-    if( is->lineByLine && (is->next - is->buf) >= INPUT_SOURCE_BUF_SIZE ) {
-        /* Look for end of line */
-        char * p = is->buf;
-        
-        while( p < is->next && *p != '\n' ) {
-            p++;
-        }
-
-        if( p >= is->next ) {
-            if (appData.debugMode) {
-                fprintf( debugFP, "Input line exceeded buffer size (source id=%lu)\n", is->id );
-            }
-
-            is->error = ERROR_BROKEN_PIPE; /* [AS] Just any non-successful code! */
-            is->count = (DWORD) -1;
-            is->next = is->buf;
-        }
-    }
-}
 
 DWORD
 InputThread(LPVOID arg)
@@ -7701,27 +5934,13 @@ InputThread(LPVOID arg)
 	is->count = 0;
       } else {
 	is->count = (DWORD) -1;
-        /* [AS] The (is->count <= 0) check below is not useful for unsigned values! */
-        break; 
       }
     }
-
-    CheckForInputBufferFull( is );
-
     SendMessage(hwndMain, WM_USER_Input, 0, (LPARAM) is);
-
-    if( is->count == ((DWORD) -1) ) break; /* [AS] */
-
     if (is->count <= 0) break;  /* Quit on EOF or error */
   }
-
   CloseHandle(ovl.hEvent);
   CloseHandle(is->hFile);
-
-  if (appData.debugMode) {
-    fprintf( debugFP, "Input thread terminated (id=%lu, error=%d, count=%ld)\n", is->id, is->error, is->count );
-  }
-
   return 0;
 }
 
@@ -7771,13 +5990,7 @@ NonOvlInputThread(LPVOID arg)
 	is->count = (DWORD) -1;
       }
     }
-
-    CheckForInputBufferFull( is );
-
     SendMessage(hwndMain, WM_USER_Input, 0, (LPARAM) is);
-
-    if( is->count == ((DWORD) -1) ) break; /* [AS] */
-
     if (is->count < 0) break;  /* Quit on error */
   }
   CloseHandle(is->hFile);
@@ -7804,9 +6017,6 @@ SocketInputThread(LPVOID arg)
       }
     }
     SendMessage(hwndMain, WM_USER_Input, 0, (LPARAM) is);
-
-    if( is->count == ((DWORD) -1) ) break; /* [AS] */
-
     if (is->count <= 0) break;  /* Quit on EOF or error */
   }
   return 0;
@@ -7828,14 +6038,12 @@ InputEvent(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 	p = q;
       }
     }
-    
     /* Move any partial line to the start of the buffer */
     q = is->buf;
     while (p < is->next) {
       *q++ = *p++;
     }
     is->next = q;
-
     if (is->error != NO_ERROR || is->count == 0) {
       /* Notify backend of the error.  Note: If there was a partial
 	 line at the end, it is not flushed through. */
@@ -7860,14 +6068,6 @@ typedef struct {
 } Enables;
 
 VOID
-GreyRevert(Boolean grey)
-{ // [HGM] vari: for retracting variations in local mode
-  HMENU hmenu = GetMenu(hwndMain);
-  EnableMenuItem(hmenu, IDM_Revert, MF_BYCOMMAND|(grey ? MF_GRAYED : MF_ENABLED));
-  EnableMenuItem(hmenu, IDM_Annotate, MF_BYCOMMAND|(grey ? MF_GRAYED : MF_ENABLED));
-}
-
-VOID
 SetMenuEnables(HMENU hmenu, Enables *enab)
 {
   while (enab->item > 0) {
@@ -7886,26 +6086,7 @@ Enables gnuEnables[] = {
   { IDM_Adjourn, MF_BYCOMMAND|MF_GRAYED },
   { IDM_StopExamining, MF_BYCOMMAND|MF_GRAYED },
   { IDM_StopObserving, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Upload, MF_BYCOMMAND|MF_GRAYED },
   { IDM_Revert, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Annotate, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_NewChat, MF_BYCOMMAND|MF_GRAYED },
-
-  // Needed to switch from ncp to GNU mode on Engine Load
-  { ACTION_POS, MF_BYPOSITION|MF_ENABLED },
-  { IDM_MachineWhite, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_MachineBlack, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_TwoMachines, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_Match, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_AnalysisMode, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_AnalyzeFile, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_Engine1Options, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_Engine2Options, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_TimeControl, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_RetractMove, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_MoveNow, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_Hint, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_Book, MF_BYCOMMAND|MF_ENABLED },
   { -1, -1 }
 };
 
@@ -7915,30 +6096,21 @@ Enables icsEnables[] = {
   { IDM_MachineWhite, MF_BYCOMMAND|MF_GRAYED },
   { IDM_MachineBlack, MF_BYCOMMAND|MF_GRAYED },
   { IDM_TwoMachines, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Match, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_MachineBoth, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_AnalysisMode, MF_BYCOMMAND|MF_ENABLED },
+  { IDM_AnalysisMode, MF_BYCOMMAND|MF_GRAYED },
   { IDM_AnalyzeFile, MF_BYCOMMAND|MF_GRAYED },
   { IDM_TimeControl, MF_BYCOMMAND|MF_GRAYED },
   { IDM_MoveNow, MF_BYCOMMAND|MF_GRAYED },
   { IDM_Hint, MF_BYCOMMAND|MF_GRAYED },
   { IDM_Book, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_LoadProg1, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_LoadProg2, MF_BYCOMMAND|MF_GRAYED },
   { IDM_IcsOptions, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_Engine1Options, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Engine2Options, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Annotate, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Tourney, MF_BYCOMMAND|MF_GRAYED },
   { -1, -1 }
 };
 
-#if ZIPPY
+#ifdef ZIPPY
 Enables zippyEnables[] = {
   { IDM_MoveNow, MF_BYCOMMAND|MF_ENABLED },
   { IDM_Hint, MF_BYCOMMAND|MF_ENABLED },
   { IDM_Book, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_Engine1Options, MF_BYCOMMAND|MF_ENABLED },
   { -1, -1 }
 };
 #endif
@@ -7949,29 +6121,21 @@ Enables ncpEnables[] = {
   { IDM_MachineWhite, MF_BYCOMMAND|MF_GRAYED },
   { IDM_MachineBlack, MF_BYCOMMAND|MF_GRAYED },
   { IDM_TwoMachines, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Match, MF_BYCOMMAND|MF_GRAYED },
   { IDM_AnalysisMode, MF_BYCOMMAND|MF_GRAYED },
   { IDM_AnalyzeFile, MF_BYCOMMAND|MF_GRAYED },
   { IDM_IcsClient, MF_BYCOMMAND|MF_GRAYED },
   { ACTION_POS, MF_BYPOSITION|MF_GRAYED },
   { IDM_Revert, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Annotate, MF_BYCOMMAND|MF_GRAYED },
   { IDM_MoveNow, MF_BYCOMMAND|MF_GRAYED },
   { IDM_RetractMove, MF_BYCOMMAND|MF_GRAYED },
   { IDM_TimeControl, MF_BYCOMMAND|MF_GRAYED },
   { IDM_Hint, MF_BYCOMMAND|MF_GRAYED },
   { IDM_Book, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_MachineBoth, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_NewChat, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Engine1Options, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Engine2Options, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Sounds, MF_BYCOMMAND|MF_GRAYED },
   { -1, -1 }
 };
 
 Enables trainingOnEnables[] = {
   { IDM_EditComment, MF_BYCOMMAND|MF_GRAYED },
-  { IDM_Comment, MF_BYCOMMAND|MF_GRAYED },
   { IDM_Pause, MF_BYCOMMAND|MF_GRAYED },
   { IDM_Forward, MF_BYCOMMAND|MF_GRAYED },
   { IDM_Backward, MF_BYCOMMAND|MF_GRAYED },
@@ -7984,7 +6148,6 @@ Enables trainingOnEnables[] = {
 
 Enables trainingOffEnables[] = {
   { IDM_EditComment, MF_BYCOMMAND|MF_ENABLED },
-  { IDM_Comment, MF_BYCOMMAND|MF_ENABLED },
   { IDM_Pause, MF_BYCOMMAND|MF_ENABLED },
   { IDM_Forward, MF_BYCOMMAND|MF_ENABLED },
   { IDM_Backward, MF_BYCOMMAND|MF_ENABLED },
@@ -8021,7 +6184,6 @@ Enables machineThinkingEnables[] = {
   { IDM_MachineWhite, MF_BYCOMMAND|MF_GRAYED },
   { IDM_MachineBlack, MF_BYCOMMAND|MF_GRAYED },
   { IDM_TwoMachines, MF_BYCOMMAND|MF_GRAYED },
-//  { IDM_Match, MF_BYCOMMAND|MF_GRAYED },
   { IDM_TypeInMove, MF_BYCOMMAND|MF_GRAYED },
   { IDM_RetractMove, MF_BYCOMMAND|MF_GRAYED },
   { -1, -1 }
@@ -8041,7 +6203,6 @@ Enables userThinkingEnables[] = {
   { IDM_MachineWhite, MF_BYCOMMAND|MF_ENABLED },
   { IDM_MachineBlack, MF_BYCOMMAND|MF_ENABLED },
   { IDM_TwoMachines, MF_BYCOMMAND|MF_ENABLED },
-//  { IDM_Match, MF_BYCOMMAND|MF_ENABLED },
   { IDM_TypeInMove, MF_BYCOMMAND|MF_ENABLED },
   { IDM_RetractMove, MF_BYCOMMAND|MF_ENABLED },
   { -1, -1 }
@@ -8053,12 +6214,6 @@ Enables userThinkingEnables[] = {
  *  Functions appear in same order as prototypes in frontend.h.
  * 
 \*---------------------------------------------------------------------------*/
-VOID
-CheckMark(UINT item, int state)
-{
-    if(item) CheckMenuItem(GetMenu(hwndMain), item, MF_BYCOMMAND|state);
-}
-
 VOID
 ModeHighlight()
 {
@@ -8120,9 +6275,12 @@ ModeHighlight()
     nowChecked = 0;
     break;
   }
-  CheckMark(prevChecked, MF_UNCHECKED);
-  CheckMark(nowChecked, MF_CHECKED);
-  CheckMark(IDM_Match, matchMode && matchGame < appData.matchGames ? MF_CHECKED : MF_UNCHECKED);
+  if (prevChecked != 0)
+    (void) CheckMenuItem(GetMenu(hwndMain),
+			 prevChecked, MF_BYCOMMAND|MF_UNCHECKED);
+  if (nowChecked != 0)
+    (void) CheckMenuItem(GetMenu(hwndMain),
+			 nowChecked, MF_BYCOMMAND|MF_CHECKED);
 
   if (nowChecked == IDM_LoadGame || nowChecked == IDM_Training) {
     (void) EnableMenuItem(GetMenu(hwndMain), IDM_Training, 
@@ -8133,16 +6291,6 @@ ModeHighlight()
   }
 
   prevChecked = nowChecked;
-
-  /* [DM] icsEngineAnalyze - Do a sceure check too */
-  if (appData.icsActive) {
-       if (appData.icsEngineAnalyze) {
-               CheckMark(IDM_AnalysisMode, MF_CHECKED);
-       } else {
-               CheckMark(IDM_AnalysisMode, MF_UNCHECKED);
-       }
-  }
-  DisplayLogos(); // [HGM] logos: mode change could have altered logos
 }
 
 VOID
@@ -8150,14 +6298,11 @@ SetICSMode()
 {
   HMENU hmenu = GetMenu(hwndMain);
   SetMenuEnables(hmenu, icsEnables);
-  EnableMenuItem(GetSubMenu(hmenu, OPTIONS_POS), IDM_IcsOptions,
-    MF_BYCOMMAND|MF_ENABLED);
-#if ZIPPY
+  EnableMenuItem(GetSubMenu(hmenu, OPTIONS_POS), ICS_POS,
+    MF_BYPOSITION|MF_ENABLED);
+#ifdef ZIPPY
   if (appData.zippyPlay) {
     SetMenuEnables(hmenu, zippyEnables);
-    if (!appData.noChessProgram)     /* [DM] icsEngineAnalyze */
-         (void) EnableMenuItem(GetMenu(hwndMain), IDM_AnalysisMode,
-          MF_BYCOMMAND|MF_ENABLED);
   }
 #endif
 }
@@ -8173,6 +6318,8 @@ SetNCPMode()
 {
   HMENU hmenu = GetMenu(hwndMain);
   SetMenuEnables(hmenu, ncpEnables);
+  EnableMenuItem(GetSubMenu(hmenu, OPTIONS_POS), SOUNDS_POS,
+    MF_BYPOSITION|MF_GRAYED);
     DrawMenuBar(hwndMain);
 }
 
@@ -8224,7 +6371,7 @@ SetMachineThinkingEnables()
   } else if (gameMode == MachinePlaysWhite) {
     (void)EnableMenuItem(hMenu, IDM_MachineWhite, flags);
   } else if (gameMode == TwoMachinesPlay) {
-    (void)EnableMenuItem(hMenu, matchMode ? IDM_Match : IDM_TwoMachines, flags); // [HGM] match
+    (void)EnableMenuItem(hMenu, IDM_TwoMachines, flags);
   }
 }
 
@@ -8234,17 +6381,17 @@ DisplayTitle(char *str)
 {
   char title[MSG_SIZ], *host;
   if (str[0] != NULLCHAR) {
-    safeStrCpy(title, str, sizeof(title)/sizeof(title[0]) );
+    strcpy(title, str);
   } else if (appData.icsActive) {
     if (appData.icsCommPort[0] != NULLCHAR)
       host = "ICS";
     else 
       host = appData.icsHost;
-      snprintf(title, MSG_SIZ, "%s: %s", szTitle, host);
+    sprintf(title, "%s: %s", szTitle, host);
   } else if (appData.noChessProgram) {
-    safeStrCpy(title, szTitle, sizeof(title)/sizeof(title[0]) );
+    strcpy(title, szTitle);
   } else {
-    safeStrCpy(title, szTitle, sizeof(title)/sizeof(title[0]) );
+    strcpy(title, szTitle);
     strcat(title, ": ");
     strcat(title, first.tidy);
   }
@@ -8279,12 +6426,8 @@ DisplayMessage(char *str1, char *str2)
     strncat(messageText, str2, len);
   }
   messageText[MESSAGE_TEXT_MAX - 1] = NULLCHAR;
-  safeStrCpy(lastMsg, messageText, MSG_SIZ);
 
-  if (hwndMain == NULL || IsIconic(hwndMain)) return;
-
-  SAYMACHINEMOVE();
-
+  if (IsIconic(hwndMain)) return;
   hdc = GetDC(hwndMain);
   oldFont = SelectObject(hdc, font[boardSize][MESSAGE_FONT]->hf);
   ExtTextOut(hdc, messageRect.left, messageRect.top, ETO_CLIPPED|ETO_OPAQUE,
@@ -8296,29 +6439,31 @@ DisplayMessage(char *str1, char *str2)
 VOID
 DisplayError(char *str, int error)
 {
+  FARPROC lpProc;
   char buf[MSG_SIZ*2], buf2[MSG_SIZ];
   int len;
+  char *p, *q;
 
   if (error == 0) {
-    safeStrCpy(buf, str, sizeof(buf)/sizeof(buf[0]) );
+    strcpy(buf, str);
   } else {
     len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM,
 			NULL, error, LANG_NEUTRAL,
 			(LPSTR) buf2, MSG_SIZ, NULL);
     if (len > 0) {
-      snprintf(buf, 2*MSG_SIZ, "%s:\n%s", str, buf2);
+      sprintf(buf, "%s:\n%s", str, buf2);
     } else {
       ErrorMap *em = errmap;
       while (em->err != 0 && em->err != error) em++;
       if (em->err != 0) {
-	snprintf(buf, 2*MSG_SIZ, "%s:\n%s", str, em->msg);
+	sprintf(buf, "%s:\n%s", str, em->msg);
       } else {
-	snprintf(buf, 2*MSG_SIZ, "%s:\nError code %d", str, error);
+	sprintf(buf, "%s:\nError code %d", str, error);
       }
     }
   }
   
-  ErrorPopUp(_("Error"), buf);
+  ErrorPopUp("Error", buf);
 }
 
 
@@ -8329,7 +6474,7 @@ DisplayMoveError(char *str)
   ClearHighlights();
   DrawPosition(FALSE, NULL);
   if (appData.popupMoveErrors) {
-    ErrorPopUp(_("Error"), str);
+    ErrorPopUp("Error", str);
   } else {
     DisplayMessage(str, "");
     moveErrorMessageUp = TRUE;
@@ -8341,21 +6486,21 @@ DisplayFatalError(char *str, int error, int exitStatus)
 {
   char buf[2*MSG_SIZ], buf2[MSG_SIZ];
   int len;
-  char *label = exitStatus ? _("Fatal Error") : _("Exiting");
+  char *label = exitStatus ? "Fatal Error" : "Exiting";
 
   if (error != 0) {
     len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM,
 			NULL, error, LANG_NEUTRAL,
 			(LPSTR) buf2, MSG_SIZ, NULL);
     if (len > 0) {
-      snprintf(buf, 2*MSG_SIZ, "%s:\n%s", str, buf2);
+      sprintf(buf, "%s:\n%s", str, buf2);
     } else {
       ErrorMap *em = errmap;
       while (em->err != 0 && em->err != error) em++;
       if (em->err != 0) {
-	snprintf(buf, 2*MSG_SIZ, "%s:\n%s", str, em->msg);
+	sprintf(buf, "%s:\n%s", str, em->msg);
       } else {
-	snprintf(buf, 2*MSG_SIZ, "%s:\nError code %d", str, error);
+	sprintf(buf, "%s:\nError code %d", str, error);
       }
     }
     str = buf;
@@ -8374,14 +6519,14 @@ DisplayFatalError(char *str, int error, int exitStatus)
 VOID
 DisplayInformation(char *str)
 {
-  (void) MessageBox(hwndMain, str, _("Information"), MB_OK|MB_ICONINFORMATION);
+  (void) MessageBox(hwndMain, str, "Information", MB_OK|MB_ICONINFORMATION);
 }
 
 
 VOID
 DisplayNote(char *str)
 {
-  ErrorPopUp(_("Note"), str);
+  ErrorPopUp("Note", str);
 }
 
 
@@ -8401,7 +6546,6 @@ QuestionDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   case WM_INITDIALOG:
     qp = (QuestionParams *) lParam;
     CenterWindow(hDlg, GetWindow(hDlg, GW_OWNER));
-    Translate(hDlg, DLG_Question);
     SetWindowText(hDlg, qp->title);
     SetDlgItemText(hDlg, OPT_QuestionText, qp->question);
     SetFocus(GetDlgItem(hDlg, OPT_QuestionInput));
@@ -8410,14 +6554,14 @@ QuestionDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   case WM_COMMAND:
     switch (LOWORD(wParam)) {
     case IDOK:
-      safeStrCpy(reply, qp->replyPrefix, sizeof(reply)/sizeof(reply[0]) );
+      strcpy(reply, qp->replyPrefix);
       if (*reply) strcat(reply, " ");
       len = strlen(reply);
       GetDlgItemText(hDlg, OPT_QuestionInput, reply + len, sizeof(reply) - len);
       strcat(reply, "\n");
       OutputToProcess(qp->pr, reply, strlen(reply), &err);
       EndDialog(hDlg, TRUE);
-      if (err) DisplayFatalError(_("Error writing to chess program"), err, 1);
+      if (err) DisplayFatalError("Error writing to chess program", err, 1);
       return TRUE;
     case IDCANCEL:
       EndDialog(hDlg, FALSE);
@@ -8446,225 +6590,25 @@ AskQuestion(char* title, char *question, char *replyPrefix, ProcRef pr)
     FreeProcInstance(lpProc);
 }
 
-/* [AS] Pick FRC position */
-LRESULT CALLBACK NewGameFRC_Proc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    static int * lpIndexFRC;
-    BOOL index_is_ok;
-    char buf[16];
-
-    switch( message )
-    {
-    case WM_INITDIALOG:
-        lpIndexFRC = (int *) lParam;
-
-        CenterWindow(hDlg, GetWindow(hDlg, GW_OWNER));
-        Translate(hDlg, DLG_NewGameFRC);
-
-        SendDlgItemMessage( hDlg, IDC_NFG_Edit, EM_SETLIMITTEXT, sizeof(buf)-1, 0 );
-        SetDlgItemInt( hDlg, IDC_NFG_Edit, *lpIndexFRC, TRUE );
-        SendDlgItemMessage( hDlg, IDC_NFG_Edit, EM_SETSEL, 0, -1 );
-        SetFocus(GetDlgItem(hDlg, IDC_NFG_Edit));
-
-        break;
-
-    case WM_COMMAND:
-        switch( LOWORD(wParam) ) {
-        case IDOK:
-            *lpIndexFRC = GetDlgItemInt(hDlg, IDC_NFG_Edit, &index_is_ok, TRUE );
-            EndDialog( hDlg, 0 );
-	    shuffleOpenings = TRUE; /* [HGM] shuffle: switch shuffling on for as long as we stay in current variant */
-            return TRUE;
-        case IDCANCEL:
-            EndDialog( hDlg, 1 );   
-            return TRUE;
-        case IDC_NFG_Edit:
-            if( HIWORD(wParam) == EN_CHANGE ) {
-                GetDlgItemInt(hDlg, IDC_NFG_Edit, &index_is_ok, TRUE );
-
-                EnableWindow( GetDlgItem(hDlg, IDOK), index_is_ok );
-            }
-            return TRUE;
-        case IDC_NFG_Random:
-	  snprintf( buf, sizeof(buf)/sizeof(buf[0]), "%d", myrandom() ); /* [HGM] shuffle: no longer limit to 960 */
-            SetDlgItemText(hDlg, IDC_NFG_Edit, buf );
-            return TRUE;
-        }
-
-        break;
-    }
-
-    return FALSE;
-}
-
-int NewGameFRC()
-{
-    int result;
-    int index = appData.defaultFrcPosition;
-    FARPROC lpProc = MakeProcInstance( (FARPROC) NewGameFRC_Proc, hInst );
-
-    result = DialogBoxParam( hInst, MAKEINTRESOURCE(DLG_NewGameFRC), hwndMain, (DLGPROC)lpProc, (LPARAM)&index );
-
-    if( result == 0 ) {
-        appData.defaultFrcPosition = index;
-    }
-
-    return result;
-}
-
-/* [AS] Game list options. Refactored by HGM */
-
-HWND gameListOptionsDialog;
-
-// low-level front-end: clear text edit / list widget
-void
-GLT_ClearList()
-{
-    SendDlgItemMessage( gameListOptionsDialog, IDC_GameListTags, LB_RESETCONTENT, 0, 0 );
-}
-
-// low-level front-end: clear text edit / list widget
-void
-GLT_DeSelectList()
-{
-    SendDlgItemMessage( gameListOptionsDialog, IDC_GameListTags, LB_SETCURSEL, 0, 0 );
-}
-
-// low-level front-end: append line to text edit / list widget
-void
-GLT_AddToList( char *name )
-{
-    if( name != 0 ) {
-            SendDlgItemMessage( gameListOptionsDialog, IDC_GameListTags, LB_ADDSTRING, 0, (LPARAM) name );
-    }
-}
-
-// low-level front-end: get line from text edit / list widget
-Boolean
-GLT_GetFromList( int index, char *name )
-{
-    if( name != 0 ) {
-	    if( SendDlgItemMessage( gameListOptionsDialog, IDC_GameListTags, LB_GETTEXT, index, (LPARAM) name ) != LB_ERR )
-		return TRUE;
-    }
-    return FALSE;
-}
-
-void GLT_MoveSelection( HWND hDlg, int delta )
-{
-    int idx1 = (int) SendDlgItemMessage( hDlg, IDC_GameListTags, LB_GETCURSEL, 0, 0 );
-    int idx2 = idx1 + delta;
-    int count = (int) SendDlgItemMessage( hDlg, IDC_GameListTags, LB_GETCOUNT, 0, 0 );
-
-    if( idx1 >=0 && idx1 < count && idx2 >= 0 && idx2 < count ) {
-        char buf[128];
-
-        SendDlgItemMessage( hDlg, IDC_GameListTags, LB_GETTEXT, idx1, (LPARAM) buf );
-        SendDlgItemMessage( hDlg, IDC_GameListTags, LB_DELETESTRING, idx1, 0 );
-        SendDlgItemMessage( hDlg, IDC_GameListTags, LB_INSERTSTRING, idx2, (LPARAM) buf );
-        SendDlgItemMessage( hDlg, IDC_GameListTags, LB_SETCURSEL, idx2, 0 );
-    }
-}
-
-LRESULT CALLBACK GameListOptions_Proc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-    switch( message )
-    {
-    case WM_INITDIALOG:
-	gameListOptionsDialog = hDlg; // [HGM] pass through global to keep out off back-end
-        
-        CenterWindow(hDlg, GetWindow(hDlg, GW_OWNER));
-        Translate(hDlg, DLG_GameListOptions);
-
-        /* Initialize list */
-        GLT_TagsToList( lpUserGLT );
-
-        SetFocus( GetDlgItem(hDlg, IDC_GameListTags) );
-
-        break;
-
-    case WM_COMMAND:
-        switch( LOWORD(wParam) ) {
-        case IDOK:
-	    GLT_ParseList();
-            EndDialog( hDlg, 0 );
-            return TRUE;
-        case IDCANCEL:
-            EndDialog( hDlg, 1 );
-            return TRUE;
-
-        case IDC_GLT_Default:
-            GLT_TagsToList( GLT_DEFAULT_TAGS );
-            return TRUE;
-
-        case IDC_GLT_Restore:
-            GLT_TagsToList( appData.gameListTags );
-            return TRUE;
-
-        case IDC_GLT_Up:
-            GLT_MoveSelection( hDlg, -1 );
-            return TRUE;
-
-        case IDC_GLT_Down:
-            GLT_MoveSelection( hDlg, +1 );
-            return TRUE;
-        }
-
-        break;
-    }
-
-    return FALSE;
-}
-
-int GameListOptions()
-{
-    int result;
-    FARPROC lpProc = MakeProcInstance( (FARPROC) GameListOptions_Proc, hInst );
-
-      safeStrCpy( lpUserGLT, appData.gameListTags ,LPUSERGLT_SIZE ); 
-
-    result = DialogBoxParam( hInst, MAKEINTRESOURCE(DLG_GameListOptions), hwndMain, (DLGPROC)lpProc, (LPARAM)lpUserGLT );
-
-    if( result == 0 ) {
-        /* [AS] Memory leak here! */
-        appData.gameListTags = strdup( lpUserGLT ); 
-    }
-
-    return result;
-}
 
 VOID
 DisplayIcsInteractionTitle(char *str)
 {
   char consoleTitle[MSG_SIZ];
 
-    snprintf(consoleTitle, MSG_SIZ, "%s: %s", szConsoleTitle, str);
-    SetWindowText(hwndConsole, consoleTitle);
-
-    if(appData.chatBoxes) { // [HGM] chat: open chat boxes
-      char buf[MSG_SIZ], *p = buf, *q;
-	safeStrCpy(buf, appData.chatBoxes, sizeof(buf)/sizeof(buf[0]) );
-      do {
-	q = strchr(p, ';');
-	if(q) *q++ = 0;
-	if(*p) ChatPopUp(p);
-      } while(p=q);
-    }
-
-    SetActiveWindow(hwndMain);
+  sprintf(consoleTitle, "%s: %s", szConsoleTitle, str);
+  SetWindowText(hwndConsole, consoleTitle);
 }
 
 void
 DrawPosition(int fullRedraw, Board board)
 {
+  if( appData.showInfluence ) // Influence Board (blakhalk).
+    fullRedraw = TRUE;
+
   HDCDrawPosition(NULL, (BOOLEAN) fullRedraw, board); 
 }
 
-void NotifyFrontendLogin()
-{
-	if (hwndConsole)
-		UpdateICSWidth(GetDlgItem(hwndConsole, OPT_ConsoleText));
-}
 
 VOID
 ResetFrontEnd()
@@ -8679,7 +6623,6 @@ ResetFrontEnd()
     ReleaseCapture();
     DrawPosition(TRUE, NULL);
   }
-  TagsPopDown();
 }
 
 
@@ -8687,19 +6630,18 @@ VOID
 CommentPopUp(char *title, char *str)
 {
   HWND hwnd = GetActiveWindow();
-  EitherCommentPopUp(currentMove, title, str, FALSE); // [HGM] vari: fake move index, rather than 0
-  SAY(str);
+  EitherCommentPopUp(0, title, str, FALSE);
   SetActiveWindow(hwnd);
 }
 
 VOID
 CommentPopDown(void)
 {
-  CheckMenuItem(GetMenu(hwndMain), IDM_Comment, MF_UNCHECKED);
+  CheckMenuItem(GetMenu(hwndMain), IDM_EditComment, MF_UNCHECKED);
   if (commentDialog) {
     ShowWindow(commentDialog, SW_HIDE);
   }
-  commentUp = FALSE;
+  commentDialogUp = FALSE;
 }
 
 VOID
@@ -8739,12 +6681,6 @@ VOID
 PlayAlarmSound()
 {
   MyPlaySound(&sounds[(int)SoundAlarm]);
-}
-
-VOID
-PlayTellSound()
-{
-  MyPlaySound(&textAttribs[ColorTell].sound);
 }
 
 
@@ -8790,12 +6726,9 @@ UserName()
   static char buf[MSG_SIZ];
   DWORD bufsiz = MSG_SIZ;
 
-  if(appData.userName != NULL && appData.userName[0] != 0) { 
-	return appData.userName; /* [HGM] username: prefer name selected by user over his system login */
-  }
   if (!GetUserName(buf, &bufsiz)) {
     /*DisplayError("Error getting user name", GetLastError());*/
-    safeStrCpy(buf, _("User"), sizeof(buf)/sizeof(buf[0]) );
+    strcpy(buf, "User");
   }
   return buf;
 }
@@ -8808,7 +6741,7 @@ HostName()
 
   if (!GetComputerName(buf, &bufsiz)) {
     /*DisplayError("Error getting host name", GetLastError());*/
-    safeStrCpy(buf, _("Unknown"), sizeof(buf)/sizeof(buf[0]) );
+    strcpy(buf, "Unknown");
   }
   return buf;
 }
@@ -8840,13 +6773,9 @@ void
 DisplayWhiteClock(long timeRemaining, int highlight)
 {
   HDC hdc;
-  char *flag = whiteFlag && gameMode == TwoMachinesPlay ? "(!)" : "";
-
-  if(appData.noGUI) return;
   hdc = GetDC(hwndMain);
   if (!IsIconic(hwndMain)) {
-    DisplayAClock(hdc, timeRemaining, highlight, 
-			flipClock ? &blackRect : &whiteRect, _("White"), flag);
+    DisplayAClock(hdc, timeRemaining, highlight, &whiteRect, "White");
   }
   if (highlight && iconCurrent == iconBlack) {
     iconCurrent = iconWhite;
@@ -8864,13 +6793,9 @@ void
 DisplayBlackClock(long timeRemaining, int highlight)
 {
   HDC hdc;
-  char *flag = blackFlag && gameMode == TwoMachinesPlay ? "(!)" : "";
-
-  if(appData.noGUI) return;
   hdc = GetDC(hwndMain);
   if (!IsIconic(hwndMain)) {
-    DisplayAClock(hdc, timeRemaining, highlight, 
-			flipClock ? &whiteRect : &blackRect, _("Black"), flag);
+    DisplayAClock(hdc, timeRemaining, highlight, &blackRect, "Black");
   }
   if (highlight && iconCurrent == iconWhite) {
     iconCurrent = iconBlack;
@@ -8915,10 +6840,10 @@ AutoSaveGame()
   char fileTitle[MSG_SIZ];
 
   defName = DefaultFileName(appData.oldSaveStyle ? "gam" : "pgn");
-  f = OpenFileDialog(hwndMain, "a", defName,
+  f = OpenFileDialog(hwndMain, TRUE, defName,
 		     appData.oldSaveStyle ? "gam" : "pgn",
 		     GAME_FILT, 
-		     _("Save Game to File"), NULL, fileTitle, NULL);
+		     "Save Game to File", NULL, fileTitle, NULL);
   if (f != NULL) {
     SaveGame(f, 0, "");
     fclose(f);
@@ -8930,12 +6855,11 @@ void
 ScheduleDelayedEvent(DelayedEventCallback cb, long millisec)
 {
   if (delayedTimerEvent != 0) {
-    if (appData.debugMode && cb != delayedTimerCallback) { // [HGM] alive: not too much debug
+    if (appData.debugMode) {
       fprintf(debugFP, "ScheduleDelayedEvent: event already scheduled\n");
     }
     KillTimer(hwndMain, delayedTimerEvent);
     delayedTimerEvent = 0;
-    if(delayedTimerCallback != cb) // [HGM] alive: do not "flush" same event, just postpone it
     delayedTimerCallback();
   }
   delayedTimerCallback = cb;
@@ -8960,54 +6884,6 @@ CancelDelayedEvent()
     KillTimer(hwndMain, delayedTimerEvent);
     delayedTimerEvent = 0;
   }
-}
-
-DWORD GetWin32Priority(int nice)
-{ // [HGM] nice: translate Unix nice() value to indows priority class. (Code stolen from Polyglot 1.4w11)
-/*
-REALTIME_PRIORITY_CLASS     0x00000100
-HIGH_PRIORITY_CLASS         0x00000080
-ABOVE_NORMAL_PRIORITY_CLASS 0x00008000
-NORMAL_PRIORITY_CLASS       0x00000020
-BELOW_NORMAL_PRIORITY_CLASS 0x00004000
-IDLE_PRIORITY_CLASS         0x00000040
-*/
-        if (nice < -15) return 0x00000080;
-        if (nice < 0)   return 0x00008000;
-        if (nice == 0)  return 0x00000020;
-        if (nice < 15)  return 0x00004000;
-        return 0x00000040;
-}
-
-void RunCommand(char *cmdLine)
-{
-  /* Now create the child process. */
-  STARTUPINFO siStartInfo;
-  PROCESS_INFORMATION piProcInfo;
-
-  siStartInfo.cb = sizeof(STARTUPINFO);
-  siStartInfo.lpReserved = NULL;
-  siStartInfo.lpDesktop = NULL;
-  siStartInfo.lpTitle = NULL;
-  siStartInfo.dwFlags = STARTF_USESTDHANDLES;
-  siStartInfo.cbReserved2 = 0;
-  siStartInfo.lpReserved2 = NULL;
-  siStartInfo.hStdInput = NULL;
-  siStartInfo.hStdOutput = NULL;
-  siStartInfo.hStdError = NULL;
-
-  CreateProcess(NULL,
-		cmdLine,	   /* command line */
-		NULL,	   /* process security attributes */
-		NULL,	   /* primary thread security attrs */
-		TRUE,	   /* handles are inherited */
-		DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP,
-		NULL,	   /* use parent's environment */
-		NULL,
-		&siStartInfo, /* STARTUPINFO pointer */
-		&piProcInfo); /* receives PROCESS_INFORMATION */
-
-  CloseHandle(piProcInfo.hThread);
 }
 
 /* Start a child process running the given program.
@@ -9125,11 +7001,6 @@ StartChildProcess(char *cmdLine, char *dir, ProcRef *pr)
     return err;
   }
 
-  if (appData.niceEngines){ // [HGM] nice: adjust engine proc priority
-    if(appData.debugMode) fprintf(debugFP, "nice engine proc to %d\n", appData.niceEngines);
-    SetPriorityClass(piProcInfo.hProcess, GetWin32Priority(appData.niceEngines));
-  }
-
   /* Close the handles we don't need in the parent */
   CloseHandle(piProcInfo.hThread);
   CloseHandle(hChildStdinRd);
@@ -9160,7 +7031,7 @@ StartChildProcess(char *cmdLine, char *dir, ProcRef *pr)
 void
 DestroyChildProcess(ProcRef pr, int/*boolean*/ signal)
 {
-  ChildProc *cp; int result;
+  ChildProc *cp;
 
   cp = (ChildProc *) pr;
   if (cp == NULL) return;
@@ -9175,28 +7046,6 @@ DestroyChildProcess(ProcRef pr, int/*boolean*/ signal)
        we could arrange for this even though neither WinBoard
        nor the chess program uses a console for stdio? */
     /*!!if (signal) GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, cp->pid);*/
-
-    /* [AS] Special termination modes for misbehaving programs... */
-    if( signal == 9 ) { 
-        result = TerminateProcess( cp->hProcess, 0 );
-
-        if ( appData.debugMode) {
-            fprintf( debugFP, "Terminating process %lu, result=%d\n", cp->pid, result );
-        }
-    }
-    else if( signal == 10 ) {
-        DWORD dw = WaitForSingleObject( cp->hProcess, 3*1000 ); // Wait 3 seconds at most
-
-        if( dw != WAIT_OBJECT_0 ) {
-            result = TerminateProcess( cp->hProcess, 0 );
-
-            if ( appData.debugMode) {
-                fprintf( debugFP, "Process %lu still alive after timeout, killing... result=%d\n", cp->pid, result );
-            }
-
-        }
-    }
-
     CloseHandle(cp->hProcess);
     break;
 
@@ -9253,9 +7102,9 @@ OpenTelnet(char *host, char *port, ProcRef *pr)
   char cmdLine[MSG_SIZ];
 
   if (port[0] == NULLCHAR) {
-    snprintf(cmdLine, MSG_SIZ, "%s %s", appData.telnetProgram, host);
+    sprintf(cmdLine, "%s %s", appData.telnetProgram, host);
   } else {
-    snprintf(cmdLine, MSG_SIZ, "%s %s %s", appData.telnetProgram, host, port);
+    sprintf(cmdLine, "%s %s %s", appData.telnetProgram, host, port);
   }
   return StartChildProcess(cmdLine, "", pr);
 }
@@ -9269,7 +7118,6 @@ OpenTCP(char *host, char *port, ProcRef *pr)
   ChildProc *cp;
   int err;
   SOCKET s;
-
   struct sockaddr_in sa, mysa;
   struct hostent FAR *hp;
   unsigned short uport;
@@ -9355,9 +7203,9 @@ OpenCommPort(char *name, ProcRef *pr)
   char fullname[MSG_SIZ];
 
   if (*name != '\\')
-    snprintf(fullname, MSG_SIZ, "\\\\.\\%s", name);
+    sprintf(fullname, "\\\\.\\%s", name);
   else
-    safeStrCpy(fullname, name, sizeof(fullname)/sizeof(fullname[0]) );
+    strcpy(fullname, name);
 
   h = CreateFile(name, GENERIC_READ | GENERIC_WRITE,
 		 0, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
@@ -9389,7 +7237,7 @@ OpenCommPort(char *name, ProcRef *pr)
 int
 OpenLoopback(ProcRef *pr)
 {
-  DisplayFatalError(_("Not implemented"), 0, 1);
+  DisplayFatalError("Not implemented", 0, 1);
   return NO_ERROR;
 }
 
@@ -9527,7 +7375,7 @@ OpenRcmd(char* host, char* user, char* cmd, ProcRef* pr)
     break;
   }
   prevStderrPort = fromPort; // remember port used
-  snprintf(stderrPortStr, MSG_SIZ, "%d", fromPort);
+  sprintf(stderrPortStr, "%d", fromPort);
 
   if (send(s, stderrPortStr, strlen(stderrPortStr) + 1, 0) == SOCKET_ERROR) {
     err = WSAGetLastError();
@@ -9584,7 +7432,7 @@ InputSourceRef
 AddInputSource(ProcRef pr, int lineByLine,
 	       InputCallback func, VOIDSTAR closure)
 {
-  InputSource *is, *is2 = NULL;
+  InputSource *is, *is2;
   ChildProc *cp = (ChildProc *) pr;
 
   is = (InputSource *) calloc(1, sizeof(InputSource));
@@ -9598,18 +7446,13 @@ AddInputSource(ProcRef pr, int lineByLine,
     consoleInputSource = is;
   } else {
     is->kind = cp->kind;
-    /* 
-        [AS] Try to avoid a race condition if the thread is given control too early:
-        we create all threads suspended so that the is->hThread variable can be
-        safely assigned, then let the threads start with ResumeThread.
-    */
     switch (cp->kind) {
     case CPReal:
       is->hFile = cp->hFrom;
       cp->hFrom = NULL; /* now owned by InputThread */
       is->hThread =
 	CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) NonOvlInputThread,
-		     (LPVOID) is, CREATE_SUSPENDED, &is->id);
+		     (LPVOID) is, 0, &is->id);
       break;
 
     case CPComm:
@@ -9617,14 +7460,14 @@ AddInputSource(ProcRef pr, int lineByLine,
       cp->hFrom = NULL; /* now owned by InputThread */
       is->hThread =
 	CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) InputThread,
-		     (LPVOID) is, CREATE_SUSPENDED, &is->id);
+		     (LPVOID) is, 0, &is->id);
       break;
 
     case CPSock:
       is->sock = cp->sock;
       is->hThread =
 	CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) SocketInputThread,
-		     (LPVOID) is, CREATE_SUSPENDED, &is->id);
+		     (LPVOID) is, 0, &is->id);
       break;
 
     case CPRcmd:
@@ -9636,22 +7479,13 @@ AddInputSource(ProcRef pr, int lineByLine,
       is2->second = is2;
       is->hThread =
 	CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) SocketInputThread,
-		     (LPVOID) is, CREATE_SUSPENDED, &is->id);
+		     (LPVOID) is, 0, &is->id);
       is2->hThread =
 	CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) SocketInputThread,
-		     (LPVOID) is2, CREATE_SUSPENDED, &is2->id);
+		     (LPVOID) is2, 0, &is2->id);
       break;
     }
-
-    if( is->hThread != NULL ) {
-        ResumeThread( is->hThread );
-    }
-
-    if( is2 != NULL && is2->hThread != NULL ) {
-        ResumeThread( is2->hThread );
-    }
   }
-
   return (InputSourceRef) is;
 }
 
@@ -9669,11 +7503,6 @@ RemoveInputSource(InputSourceRef isr)
   }
 }
 
-int no_wrap(char *message, int count)
-{
-    ConsoleOutput(message, count, FALSE);
-    return count;
-}
 
 int
 OutputToProcess(ProcRef pr, char *message, int count, int *outError)
@@ -9682,32 +7511,11 @@ OutputToProcess(ProcRef pr, char *message, int count, int *outError)
   int outCount = SOCKET_ERROR;
   ChildProc *cp = (ChildProc *) pr;
   static OVERLAPPED ovl;
-  static int line = 0;
 
-  if (pr == NoProc)
-  {
-    if (appData.noJoin || !appData.useInternalWrap)
-      return no_wrap(message, count);
-    else
-    {
-      int width = get_term_width();
-      int len = wrap(NULL, message, count, width, &line);
-      char *msg = malloc(len);
-      int dbgchk;
-
-      if (!msg)
-        return no_wrap(message, count);
-      else
-      {
-        dbgchk = wrap(msg, message, count, width, &line);
-        if (dbgchk != len && appData.debugMode)
-            fprintf(debugFP, "wrap(): dbgchk(%d) != len(%d)\n", dbgchk, len);
-        ConsoleOutput(msg, len, FALSE);
-        free(msg);
-        return len;
-      }
-    }
-  }
+  if (pr == NoProc) {
+    ConsoleOutput(message, count, FALSE);
+    return count;
+  } 
 
   if (ovl.hEvent == NULL) {
     ovl.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -9746,12 +7554,6 @@ OutputToProcess(ProcRef pr, char *message, int count, int *outError)
   return outCount;
 }
 
-void
-DoSleep(int n)
-{
-    if(n != 0) Sleep(n);
-}
-
 int
 OutputToProcessDelayed(ProcRef pr, char *message, int count, int *outError,
 		       long msdelay)
@@ -9765,14 +7567,14 @@ void
 CmailSigHandlerCallBack(InputSourceRef isr, VOIDSTAR closure,
 			char *buf, int count, int error)
 {
-  DisplayFatalError(_("Not implemented"), 0, 1);
+  DisplayFatalError("Not implemented", 0, 1);
 }
 
 /* see wgamelist.c for Game List functions */
 /* see wedittags.c for Edit Tags functions */
 
 
-int
+VOID
 ICSInitScript()
 {
   FILE *f;
@@ -9784,10 +7586,8 @@ ICSInitScript()
     if (f != NULL) {
       ProcessICSInitScript(f);
       fclose(f);
-      return TRUE;
     }
   }
-  return FALSE;
 }
 
 
@@ -9798,6 +7598,122 @@ StartAnalysisClock()
   analysisTimerEvent = SetTimer(hwndMain, (UINT) ANALYSIS_TIMER_ID,
 		                        (UINT) 2000, NULL);
 }
+
+LRESULT CALLBACK
+AnalysisDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+  static HANDLE hwndText;
+  RECT rect;
+  static int sizeX, sizeY;
+  int newSizeX, newSizeY, flags;
+  MINMAXINFO *mmi;
+
+  switch (message) {
+  case WM_INITDIALOG: /* message: initialize dialog box */
+    /* Initialize the dialog items */
+    hwndText = GetDlgItem(hDlg, OPT_AnalysisText);
+    SetWindowText(hDlg, analysisTitle);
+    SetDlgItemText(hDlg, OPT_AnalysisText, analysisText);
+    /* Size and position the dialog */
+    if (!analysisDialog) {
+      analysisDialog = hDlg;
+      flags = SWP_NOZORDER;
+      GetClientRect(hDlg, &rect);
+      sizeX = rect.right;
+      sizeY = rect.bottom;
+      if (analysisX != CW_USEDEFAULT && analysisY != CW_USEDEFAULT &&
+	  analysisW != CW_USEDEFAULT && analysisH != CW_USEDEFAULT) {
+	WINDOWPLACEMENT wp;
+	EnsureOnScreen(&analysisX, &analysisY);
+	wp.length = sizeof(WINDOWPLACEMENT);
+	wp.flags = 0;
+	wp.showCmd = SW_SHOW;
+	wp.ptMaxPosition.x = wp.ptMaxPosition.y = 0;
+	wp.rcNormalPosition.left = analysisX;
+	wp.rcNormalPosition.right = analysisX + analysisW;
+	wp.rcNormalPosition.top = analysisY;
+	wp.rcNormalPosition.bottom = analysisY + analysisH;
+	SetWindowPlacement(hDlg, &wp);
+
+	GetClientRect(hDlg, &rect);
+	newSizeX = rect.right;
+	newSizeY = rect.bottom;
+        ResizeEditPlusButtons(hDlg, hwndText, sizeX, sizeY,
+			      newSizeX, newSizeY);
+	sizeX = newSizeX;
+	sizeY = newSizeY;
+      }
+    }
+    return FALSE;
+
+  case WM_COMMAND: /* message: received a command */
+    switch (LOWORD(wParam)) {
+    case IDCANCEL:
+      EditGameEvent();
+      return TRUE;
+    default:
+      break;
+    }
+    break;
+
+  case WM_SIZE:
+    newSizeX = LOWORD(lParam);
+    newSizeY = HIWORD(lParam);
+    ResizeEditPlusButtons(hDlg, hwndText, sizeX, sizeY, newSizeX, newSizeY);
+    sizeX = newSizeX;
+    sizeY = newSizeY;
+    break;
+
+  case WM_GETMINMAXINFO:
+    /* Prevent resizing window too small */
+    mmi = (MINMAXINFO *) lParam;
+    mmi->ptMinTrackSize.x = 100;
+    mmi->ptMinTrackSize.y = 100;
+    break;
+  }
+  return FALSE;
+}
+
+VOID
+AnalysisPopUp(char* title, char* str)
+{
+  FARPROC lpProc;
+  char *p, *q;
+
+  if (str == NULL) str = "";
+  p = (char *) malloc(2 * strlen(str) + 2);
+  q = p;
+  while (*str) {
+    if (*str == '\n') *q++ = '\r';
+    *q++ = *str++;
+  }
+  *q = NULLCHAR;
+  if (analysisText != NULL) free(analysisText);
+  analysisText = p;
+
+  if (analysisDialog) {
+    SetWindowText(analysisDialog, title);
+    SetDlgItemText(analysisDialog, OPT_AnalysisText, analysisText);
+    ShowWindow(analysisDialog, SW_SHOW);
+  } else {
+    analysisTitle = title;
+    lpProc = MakeProcInstance((FARPROC)AnalysisDialog, hInst);
+    CreateDialog(hInst, MAKEINTRESOURCE(DLG_Analysis),
+		 hwndMain, (DLGPROC)lpProc);
+    FreeProcInstance(lpProc);
+  }
+  analysisDialogUp = TRUE;  
+}
+
+VOID
+AnalysisPopDown()
+{
+  if (analysisDialog) {
+    ShowWindow(analysisDialog, SW_HIDE);
+  }
+  analysisDialogUp = FALSE;  
+}
+
 
 VOID
 SetHighlights(int fromX, int fromY, int toX, int toY)
@@ -9858,24 +7774,6 @@ static void Tween( POINT * start, POINT * mid, POINT * finish, int factor,
 #define kFactor 4
 
 void
-AnimateAtomicCapture(Board board, int fromX, int fromY, int toX, int toY)
-{	// [HGM] atomic: animate blast wave
-	int i;
-
-	explodeInfo.fromX = fromX;
-	explodeInfo.fromY = fromY;
-	explodeInfo.toX = toX;
-	explodeInfo.toY = toY;
-	for(i=1; i<4*kFactor; i++) {
-	    explodeInfo.radius = (i*180)/(4*kFactor-1);
-	    DrawPosition(FALSE, board);
-	    Sleep(appData.animSpeed);
-	}
-	explodeInfo.radius = 0;
-	DrawPosition(TRUE, board);
-}
-
-void
 AnimateMove(board, fromX, fromY, toX, toY)
      Board board;
      int fromX;
@@ -9897,17 +7795,17 @@ AnimateMove(board, fromX, fromY, toX, toY)
   ScreenSquare(fromX, fromY, &start);
   ScreenSquare(toX, toY, &finish);
 
-  /* All moves except knight jumps move in straight line */
-  if (!(abs(fromX-toX) == 1 && abs(fromY-toY) == 2 || abs(fromX-toX) == 2 && abs(fromY-toY) == 1)) {
+  /* All pieces except knights move in straight line */
+  if (piece != WhiteKnight && piece != BlackKnight) {
     mid.x = start.x + (finish.x - start.x) / 2;
     mid.y = start.y + (finish.y - start.y) / 2;
   } else {
-    /* Knight: make straight movement then diagonal */
+    /* Knight: make diagonal movement then straight */
     if (abs(toY - fromY) < abs(toX - fromX)) {
        mid.x = start.x + (finish.x - start.x) / 2;
-       mid.y = start.y;
+       mid.y = finish.y;
      } else {
-       mid.x = start.x;
+       mid.x = finish.x;
        mid.y = start.y + (finish.y - start.y) / 2;
      }
   }
@@ -9933,7 +7831,6 @@ AnimateMove(board, fromX, fromY, toX, toY)
   animInfo.pos = finish;
   DrawPosition(FALSE, NULL);
   animInfo.piece = EmptySquare;
-  Explode(board, fromX, fromY, toX, toY);
 }
 
 /*      Convert board position to corner of screen rect and color       */
@@ -9943,11 +7840,11 @@ ScreenSquare(column, row, pt)
      int column; int row; POINT * pt;
 {
   if (flipView) {
-    pt->x = lineGap + ((BOARD_WIDTH-1)-column) * (squareSize + lineGap) + border;
-    pt->y = lineGap + row * (squareSize + lineGap) + border;
+    pt->x = lineGap + ((BOARD_SIZE-1)-column) * (squareSize + lineGap);
+    pt->y = lineGap + row * (squareSize + lineGap);
   } else {
-    pt->x = lineGap + column * (squareSize + lineGap) + border;
-    pt->y = lineGap + ((BOARD_HEIGHT-1)-row) * (squareSize + lineGap) + border;
+    pt->x = lineGap + column * (squareSize + lineGap);
+    pt->y = lineGap + ((BOARD_SIZE-1)-row) * (squareSize + lineGap);
   }
 }
 
@@ -9995,44 +7892,9 @@ Tween(start, mid, finish, factor, frames, nFrames)
 }
 
 void
-SettingsPopUp(ChessProgramState *cps)
-{     // [HGM] wrapper needed because handles must not be passed through back-end
-      EngineOptionsPopup(savedHwnd, cps);
-}
-
-int flock(int fid, int code)
+HistorySet(char movelist[][2*MOVE_LEN], int first, int last, int current)
 {
-    HANDLE hFile = (HANDLE) _get_osfhandle(fid);
-    OVERLAPPED ov;
-    ov.hEvent = NULL;
-    ov.Offset = 0;
-    ov.OffsetHigh = 0;
-    switch(code) {
-      case 1: LockFileEx(hFile, LOCKFILE_EXCLUSIVE_LOCK, 0, 1024, 0, &ov); break;   // LOCK_SH
-      case 2: LockFileEx(hFile, LOCKFILE_EXCLUSIVE_LOCK, 0, 1024, 0, &ov); break;   // LOCK_EX
-      case 3: UnlockFileEx(hFile, 0, 1024, 0, &ov); break; // LOCK_UN
-      default: return -1;
-    }
-    return 0;
+  /* Currently not implemented in WinBoard */
 }
 
-char *
-Col2Text (int n)
-{
-    static int i=0;
-    static char col[8][20];
-    COLORREF color = *(COLORREF *) colorVariable[n];
-    i = i+1 & 7;
-    snprintf(col[i], 20, "#%02lx%02lx%02lx", color&0xff, (color>>8)&0xff, (color>>16)&0xff);
-    return col[i];
-}
 
-void
-ActivateTheme (int new)
-{   // Redo initialization of features depending on options that can occur in themes
-   InitTextures();
-   if(new) InitDrawingColors();
-   fontBitmapSquareSize = 0; // request creation of new font pieces
-   InitDrawingSizes(-2, 0);
-   InvalidateRect(hwndMain, NULL, TRUE);
-}

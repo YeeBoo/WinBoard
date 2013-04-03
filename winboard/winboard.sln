@@ -1,0 +1,25 @@
+Microsoft Visual Studio Solution File, Format Version 10.00
+# Visual C++ Express 2008
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "winboard", "winboard.vcproj", "{E0D0517F-C2B0-42C5-80D0-71127941F2F0}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "infboard", "extends\infboard\infboard.vcproj", "{F9C6F3ED-74B5-4963-804F-FB2EF9F32095}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E0D0517F-C2B0-42C5-80D0-71127941F2F0}.Debug|Win32.ActiveCfg = Debug|Win32
+		{E0D0517F-C2B0-42C5-80D0-71127941F2F0}.Debug|Win32.Build.0 = Debug|Win32
+		{E0D0517F-C2B0-42C5-80D0-71127941F2F0}.Release|Win32.ActiveCfg = Release|Win32
+		{E0D0517F-C2B0-42C5-80D0-71127941F2F0}.Release|Win32.Build.0 = Release|Win32
+		{F9C6F3ED-74B5-4963-804F-FB2EF9F32095}.Debug|Win32.ActiveCfg = Debug|Win32
+		{F9C6F3ED-74B5-4963-804F-FB2EF9F32095}.Debug|Win32.Build.0 = Debug|Win32
+		{F9C6F3ED-74B5-4963-804F-FB2EF9F32095}.Release|Win32.ActiveCfg = Release|Win32
+		{F9C6F3ED-74B5-4963-804F-FB2EF9F32095}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

@@ -1,42 +1,38 @@
 /*
  * lists.c -- Includefile of lists.c
+ * XBoard $Id: lists.h,v 2.1 2003/10/27 19:21:00 mann Exp $
  *
- * Copyright 1995, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
- *
- * Enhancements Copyright 2005 Alessandro Scotti
+ * Copyright 1995 Free Software Foundation, Inc.
  *
  * ------------------------------------------------------------------------
- *
- * GNU XBoard is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or (at
- * your option) any later version.
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * GNU XBoard is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses/.  *
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111 USA.
+ * ------------------------------------------------------------------------
  *
- *------------------------------------------------------------------------
- ** See the file ChangeLog for a revision history.  */
-
-/*
  * This file could well be a part of backend.c, but I prefer it this
  * way.
  */
 
-#ifndef XB_LISTS
-#define XB_LISTS
+#ifndef _LISTS_H
+#define _LISTS_H
 
 
 /* Type definition: Node of a double linked list.
  */
-typedef struct XB_ListNode {
-    struct XB_ListNode *succ;
-    struct XB_ListNode *pred;
+typedef struct _ListNode {
+    struct _ListNode *succ;
+    struct _ListNode *pred;
 } ListNode;
 
 
@@ -47,9 +43,9 @@ typedef struct XB_ListNode {
  * if and only if it consists of 2 nodes. :-)
  */
 typedef struct {
-    struct XB_ListNode *head;     /*  The list structure consists of two  */
-    struct XB_ListNode *tail;     /*  ListNode's: The pred entry of the   */
-    struct XB_ListNode *tailPred; /*  head being the succ entry of the    */
+    struct _ListNode *head;     /*  The list structure consists of two  */
+    struct _ListNode *tail;     /*  ListNode's: The pred entry of the   */
+    struct _ListNode *tailPred; /*  head being the succ entry of the    */
 } List;                         /*  tail.                               */
 
 

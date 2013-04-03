@@ -4,18 +4,18 @@
 	Program to convert pieces from ZIICS format to XPM & XIM format.
 	(C version)  By Frank McIngvale <frankm@hiwaay.net>.
 
-	Copyright (C) 1996, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
+	Copyright (C) 1996 Free Software Foundation, Inc.
 
 	NOTICE: The piece images distributed with ZIICS are
-	    copyrighted works of their original creators.  Images
+	    copyrighted works of their original creators.  Images 
             converted with zic2xpm may not be redistributed without
 	    the permission of the copyright holders.  Do not contact
 	    the authors of zic2xpm or of ZIICS itself to request
-	    permission.
+	    permission. 
 
 	NOTICE:  The format of the ZIICS piece file was gleaned from
 	    SHOWSETS.PAS, a part of ZIICS.  Thanks to Andy McFarland
-	    (Zek on ICC) for making this source available!  ZIICS is a
+	    (Zek on ICC) for making this source available!  ZIICS is a 
 	    completely separate and copyrighted work of Andy
 	    McFarland. 	Use and distribution of ZIICS falls under the
 	    ZIICS license, NOT the GNU General Public License.
@@ -24,23 +24,20 @@
             by experimentation, and without access to any
             of Borland Inc.'s BGI library source code.
 
+	This program is free software; you can redistribute it and/or modify
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation; either version 2 of the License, or
+	(at your option) any later version.  However, the above notices
+	MUST BE RETAINED in any copy that you redistribute or modify.
 
-	    GNU XBoard is free software: you can redistribute it
-	    and/or modify it under the terms of the GNU General Public
-	    License as published by the Free Software Foundation,
-	    either version 3 of the License, or (at your option) any
-	    later version.
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
 
-	    GNU XBoard is distributed in the hope that it will be
-	    useful, but WITHOUT ANY WARRANTY; without even the implied
-	    warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-	    PURPOSE. See the GNU General Public License for more
-	    details.
-
-	    You should have received a copy of the GNU General Public
-	    License along with this program. If not, see
-	    http://www.gnu.org/licenses/.
-
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111 USA.
 
 	** If you find a bug in zic2xpm.c, please report it to me,
   	   Frank McIngvale (frankm@hiwaay.net) so that I may fix it. **
@@ -59,7 +56,7 @@
 		size = Piece size.
 
 	Plus 4 files for the light & dark squares.
-
+	
 	This means that you can extract multiple SIZES in one directory
 	without name clashes. Extracting two sets of the SAME
 	size in a directory will cause the second to overwrite
@@ -115,7 +112,6 @@ typedef struct {
 } z2xpm;
 
 #define NR_ZIICS_COLORS 4
-#define BUFLEN 100
 
 /* SHOWSETS.PAS (from ZIICS) states that images may only
    use color numbers 0, 2, 14, and 15 */
@@ -132,15 +128,15 @@ z2xpm z2xpm_tab[NR_ZIICS_COLORS] = {
   { 14, '*', "light_square", "gray" },
   { 2, '.', "dark_square", "green" } };
 
-void
-fatal (char *str)
+void fatal( str )
+	 char *str;
 {
   printf("Fatal error: %s\n", str );
   exit(1);
 }
 
-z2xim *
-lookup_xim_color (int color)
+z2xim *lookup_xim_color( color )
+	 int color;
 {
   int i;
 
@@ -156,8 +152,8 @@ lookup_xim_color (int color)
   return NULL;					/* Make compiler happy */
 }
 
-z2xpm *
-lookup_xpm_color (int color)
+z2xpm *lookup_xpm_color( color )
+	 int color;
 {
   int i;
 
@@ -175,8 +171,8 @@ lookup_xpm_color (int color)
 
 char *src_name;
 
-int
-up8 (int i)
+int up8( i )
+	 int i;
 {
   int r;
 
@@ -187,8 +183,8 @@ up8 (int i)
   return i + 8 - r;
 }
 
-unsigned int
-vga_imagesize (int w, int h)
+unsigned int vga_imagesize( w, h )
+	 int w, h;
 {
   int w8;
   unsigned int s;
@@ -200,8 +196,9 @@ vga_imagesize (int w, int h)
   return s;
 }
 
-unsigned char *
-decode_byte (unsigned char *dest, unsigned char *b, int w)
+unsigned char *decode_byte( dest, b, w )
+	 unsigned char *dest, *b;
+	 int w;
 {
   int i, j;
   unsigned char byte, bit;
@@ -231,8 +228,9 @@ decode_byte (unsigned char *dest, unsigned char *b, int w)
    SRC is in packed pixel format.
    DEST is filled with 1 BYTE per PIXEL.
 */
-unsigned char *
-decode_line (unsigned char *dest, unsigned char *src, int w)
+unsigned char *decode_line( dest, src, w )
+	 unsigned char *dest, *src;
+	 int w;
 {
   unsigned int w8;
   unsigned int bpp;
@@ -264,17 +262,19 @@ decode_line (unsigned char *dest, unsigned char *src, int w)
   return (src + bpp * 4);
 }
 
-int
-write_xim_header (FILE *fp, int w, int h)
+int write_xim_header( fp, w, h )
+	 FILE *fp;
+	 int w, h;
 {
   fputc( w, fp );
   fputc( h, fp );
-
+  
   return 0;
 }
 
-int
-write_xpm_header (FILE *fp, int w, int h)
+int write_xpm_header( fp, w, h )
+	 FILE *fp;
+	 int w, h;
 {
   int i;
   z2xpm *cv;
@@ -304,15 +304,17 @@ write_xpm_header (FILE *fp, int w, int h)
   return 0;
 }
 
-void
-create_piece_xim (char *outname, FILE *fpin, int W, int H)
+void create_piece_xim( outname, fpin, W, H )
+	 char *outname;
+	 FILE *fpin;
+	 int W, H;
 {
   FILE *fpout;
   int w, h, i, j, c;
   unsigned char *lump, *p, *line;
   long size;
   z2xim *ent;
-
+  
   fpout = fopen( outname, "wb" );
   if ( !fpout )
 	fatal( "Can't create output file.");
@@ -323,11 +325,11 @@ create_piece_xim (char *outname, FILE *fpin, int W, int H)
 
   c = fgetc( fpin );
   h = (fgetc(fpin) << 8) | c;
-
+  
   ++w; ++h;
 
   if ( w != W || h != H )
-	fatal( "Bad header." );
+	fatal( "Bad header." );	  
 
   size = vga_imagesize( w, h ) - 4;
   lump = (unsigned char*)malloc( size );
@@ -342,33 +344,35 @@ create_piece_xim (char *outname, FILE *fpin, int W, int H)
   write_xim_header( fpout, w, h );
 
   p = lump;
-
+  
   /* Write XIM data */
   for( i=0; i<h; ++i )
 	{
 	  p = decode_line( line, p, w );
-
+	  
 	  for( j=0; j<w; ++j )
 		{
 		  ent = lookup_xim_color( line[j] );
 		  fputc( ent->xval, fpout );
 		}
 	}
-
+  
   free( lump );
   free( line );
   fclose( fpout );
 }
 
-void
-create_piece_xpm (char *outname, FILE *fpin, int W, int H)
+void create_piece_xpm( outname, fpin, W, H )
+	 char *outname;
+	 FILE *fpin;
+	 int W, H;
 {
   FILE *fpout;
   int w, h, i, j, c;
   unsigned char *lump, *p, *line;
   long size;
   z2xpm *cv;
-
+  
   fpout = fopen( outname, "wb" );
   if ( !fpout )
 	fatal( "Can't create output file.");
@@ -379,11 +383,11 @@ create_piece_xpm (char *outname, FILE *fpin, int W, int H)
 
   c = fgetc( fpin );
   h = (fgetc(fpin) << 8) | c;
-
+  
   ++w; ++h;
 
   if ( w != W || h != H )
-	fatal( "Bad header." );
+	fatal( "Bad header." );	  
 
   size = vga_imagesize( w, h ) - 4;
   lump = (unsigned char*)malloc( size );
@@ -398,12 +402,12 @@ create_piece_xpm (char *outname, FILE *fpin, int W, int H)
   write_xpm_header( fpout, w, h );
 
   p = lump;
-
+  
   /* Write XPM data */
   for( i=0; i<h; ++i )
 	{
 	  p = decode_line( line, p, w );
-
+	  
 	  fprintf( fpout, "\"" );
 	  for( j=0; j<w; ++j )
 		{
@@ -414,7 +418,7 @@ create_piece_xpm (char *outname, FILE *fpin, int W, int H)
 	}
 
   fprintf( fpout, "};\n" );
-
+  
   free( lump );
   free( line );
   fclose( fpout );
@@ -427,28 +431,28 @@ char *pname[] = { "Pawn", "Rook", "King", "Queen", "Bishop", "Knight" };
 /* The suborder - Light/Light, Light/Dark, etc. */
 char *prefixes[] = { "ll", "ld", "dl", "dd" };
 
-int
-process_file_xim (char *filename)
+int process_file_xim( filename )
+	 char *filename;
 {
   int w, h, piece, kind, c;
   int nr_pieces = 6;
   int nr_kinds = 4;
   FILE *fp;
-  char buf[BUFLEN];
+  char buf[100];
 
   src_name = filename;
-
+  
   fp = fopen( filename, "rb" );
   if ( !fp )
 	fatal( "Can't open input file." );
-
+  
   /* Header is two ints -- Width then Height, x86 format */
   c = fgetc( fp );
   w = (fgetc(fp) << 8) | c;
 
   c = fgetc( fp );
   h = (fgetc(fp) << 8) | c;
-
+  
   ++w; ++h;
 
   if ( w != h )
@@ -461,61 +465,61 @@ process_file_xim (char *filename)
   printf("Creating XIM files...\n");
   printf("File: %s, W=%d, H=%d\n", filename, w, h );
   fseek( fp, 0, SEEK_SET );
-
+  
   /* Write .XIM files */
   for( piece = 0; piece < nr_pieces; ++piece )
 	{
 	  printf("%s ", pname[piece] );
-
+	  
 	  for( kind = 0; kind < nr_kinds; ++kind )
 		{
 		  printf( "." );
 		  /* Form output filename -- <piece><kind><size>.xim */
-		  snprintf(buf, BUFLEN, "%c%s%d.xim", pieces[piece], prefixes[kind], w);
+		  sprintf(buf, "%c%s%d.xim", pieces[piece], prefixes[kind], w);
 		  create_piece_xim( buf, fp, w, h );
 		}
 	  printf("\n");
 	}
 
   /* Write the light & dark squares */
-  snprintf( buf, BUFLEN, "lsq%d.xim", w );
+  sprintf( buf, "lsq%d.xim", w );
   printf("Light Square" );
   create_piece_xim( buf, fp, w, h );
 
-  snprintf( buf, BUFLEN, "dsq%d.xim", w );
+  sprintf( buf, "dsq%d.xim", w );
   printf("\nDark Square" );
-  create_piece_xim( buf, fp, w, h );
+  create_piece_xim( buf, fp, w, h );  
   printf("\n");
-
+  
   printf("Successfully converted!!\n" );
 
   fclose( fp );
-
+  
   return 0;
 }
 
-int
-process_file_xpm (char *filename)
+int process_file_xpm( filename )
+	 char *filename;
 {
   int w, h, piece, kind, c;
   int nr_pieces = 6;
   int nr_kinds = 4;
   FILE *fp;
-  char buf[BUFLEN];
+  char buf[100];
 
   src_name = filename;
-
+  
   fp = fopen( filename, "rb" );
   if ( !fp )
 	fatal( "Can't open input file." );
-
+  
   /* Header is two ints -- Width then Height, x86 format */
   c = fgetc( fp );
   w = (fgetc(fp) << 8) | c;
 
   c = fgetc( fp );
   h = (fgetc(fp) << 8) | c;
-
+  
   ++w; ++h;
 
   if ( w != h )
@@ -524,48 +528,49 @@ process_file_xpm (char *filename)
 	  printf("       (This set is %dx%d)\n", w, h );
 	  exit(1);
 	}
-
+  
   printf("Creating XPM files...\n");
   printf("File: %s, W=%d, H=%d\n", filename, w, h );
   fseek( fp, 0, SEEK_SET );
-
+  
   /* Write .XPM files */
   for( piece = 0; piece < nr_pieces; ++piece )
 	{
 	  printf("%s ", pname[piece] );
-
+	  
 	  for( kind = 0; kind < nr_kinds; ++kind )
 		{
 		  printf( "." );
 		  /* Form output filename -- <piece><kind><size>.xpm */
-		  snprintf(buf, BUFLEN, "%c%s%d.xpm", pieces[piece], prefixes[kind], w);
+		  sprintf(buf, "%c%s%d.xpm", pieces[piece], prefixes[kind], w);
 		  create_piece_xpm( buf, fp, w, h );
 		}
 	  printf("\n");
 	}
 
   /* Write the light & dark squares */
-  snprintf( buf, BUFLEN, "lsq%d.xpm", w );
+  sprintf( buf, "lsq%d.xpm", w );
   printf("Light Square" );
   create_piece_xpm( buf, fp, w, h );
 
-  snprintf( buf, BUFLEN, "dsq%d.xpm", w );
+  sprintf( buf, "dsq%d.xpm", w );
   printf("\nDark Square" );
-  create_piece_xpm( buf, fp, w, h );
+  create_piece_xpm( buf, fp, w, h );  
   printf("\n");
-
+  
   printf("Successfully converted!!\n" );
 
   fclose( fp );
-
+  
   return 0;
 }
 
-int
-main (int argc, char **argv)
+int main( argc, argv )
+	 int argc;
+	 char *argv[];
 {
   int i;
-
+  
   if ( argc < 2 )
 	{
 	  printf("ZIC2XPM 2.01 - by Frank McIngvale (frankm@hiwaay.net)\n");
@@ -579,13 +584,13 @@ main (int argc, char **argv)
 
 
   setbuf( stdout, NULL );
-
+  
   for( i=1; i<argc; ++i )
 	{
 	  process_file_xpm( argv[i] );
 	  process_file_xim( argv[i] );
 	}
-
+  
   fprintf(stderr, "%s\n%s\n%s\n%s\n%s\n%s\n",
 	  "NOTICE: The piece images distributed with ZIICS are",
 	  "    copyrighted works of their original creators.  Images",

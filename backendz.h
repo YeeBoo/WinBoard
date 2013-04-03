@@ -1,13 +1,9 @@
 /*
  * backendz.h -- Internal interface exported by XBoard backend.c to zippy.c
+ * $Id: backendz.h,v 2.1 2003/10/27 19:21:00 mann Exp $
  *
- * Copyright 1991 by Digital Equipment Corporation, Maynard,
- * Massachusetts.
- *
- * Enhancements Copyright 1992-2001, 2002, 2003, 2004, 2005, 2006,
- * 2007, 2008, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
- *
- * Enhancements Copyright 2005 Alessandro Scotti
+ * Copyright 1991 by Digital Equipment Corporation, Maynard, Massachusetts.
+ * Enhancements Copyright 1992-95 Free Software Foundation, Inc.
  *
  * The following terms apply to Digital Equipment Corporation's copyright
  * interest in XBoard:
@@ -31,28 +27,30 @@
  * SOFTWARE.
  * ------------------------------------------------------------------------
  *
- * The following terms apply to the enhanced version of XBoard
- * distributed by the Free Software Foundation:
+ * The following terms apply to the enhanced version of XBoard distributed
+ * by the Free Software Foundation:
  * ------------------------------------------------------------------------
- *
- * GNU XBoard is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or (at
- * your option) any later version.
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * GNU XBoard is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses/.  *
- *
- *------------------------------------------------------------------------
- ** See the file ChangeLog for a revision history.  */
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ * ------------------------------------------------------------------------
+ */
 
-#ifndef XB_BACKENDZ
-#define XB_BACKENDZ
+#ifndef _BACKENDZ
+#define _BACKENDZ
+
+#include "common.h"
+#include "frontend.h"
 
 extern long whiteTimeRemaining, blackTimeRemaining;
 extern int forwardMostMove;
@@ -61,7 +59,6 @@ extern ProcRef firstProgramPR;
 extern int startedFromSetupPosition;
 extern int firstMove;
 extern GameInfo gameInfo;
-extern void ics_printf P((char *format, ...));
 extern void SendToICS P((char *s));
 extern int looking_at P((char *, int *, char *));
 extern void SendToProgram P((char *message, ChessProgramState *cps));

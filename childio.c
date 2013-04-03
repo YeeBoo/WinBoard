@@ -1,11 +1,9 @@
 /*
- * childio.c -- set up communication with child processes
+ * childio.c -- set up communication with child processes $Id:
+ * childio.c,v 1.2 1994/11/12 19:31:41 mann Exp mann $
  *
- * Copyright 1991 by Digital Equipment Corporation, Maynard,
- * Massachusetts.
- *
- * Enhancements Copyright 1992-2001, 2002, 2003, 2004, 2005, 2006,
- * 2007, 2008, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
+ * Copyright 1991 by Digital Equipment Corporation, Maynard, Massachusetts.
+ * Enhancements Copyright 1992-95 Free Software Foundation, Inc.
  *
  * The following terms apply to Digital Equipment Corporation's copyright
  * interest in XBoard:
@@ -29,25 +27,25 @@
  * SOFTWARE.
  * ------------------------------------------------------------------------
  *
- * The following terms apply to the enhanced version of XBoard
- * distributed by the Free Software Foundation:
+ * The following terms apply to the enhanced version of XBoard distributed
+ * by the Free Software Foundation:
  * ------------------------------------------------------------------------
- *
- * GNU XBoard is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or (at
- * your option) any later version.
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * GNU XBoard is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses/.  *
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ * ------------------------------------------------------------------------
  *
- *------------------------------------------------------------------------
- ** See the file ChangeLog for a revision history.  */
+ * See the file ChangeLog for a revision history.  */
 
 /* This file splits into two entirely different pieces of code
    depending on whether USE_PTYS is 1.  The whole reason for all
@@ -59,7 +57,6 @@
 
 #include "config.h"
 
-#include <stdio.h>
 #include <signal.h>
 #if HAVE_UNISTD_H
 # include <unistd.h>
@@ -67,13 +64,12 @@
 
 #include "common.h"
 #include "frontend.h"
-#include "backend.h" /* for safeStrCpy */
 
 #if !USE_PTYS
 /* This code is for systems where pipes work properly */
 
-void
-SetUpChildIO (int to_prog[2], int from_prog[2])
+void SetUpChildIO(to_prog, from_prog)
+     int to_prog[2], from_prog[2];
 {
     signal(SIGPIPE, SIG_IGN);
     pipe(to_prog);
@@ -99,8 +95,8 @@ SetUpChildIO (int to_prog[2], int from_prog[2])
 
 int PseudoTTY P((char pty_name[]));
 
-int
-SetUpChildIO (int to_prog[2], int from_prog[2])
+int SetUpChildIO(to_prog, from_prog)
+     int to_prog[2], from_prog[2];
 {
     char pty_name[MSG_SIZ];
 
@@ -127,19 +123,19 @@ SetUpChildIO (int to_prog[2], int from_prog[2])
 #if HAVE_GRANTPT
 /* This code is for SVR4 */
 
-int
-PseudoTTY (char pty_name[])
+int PseudoTTY(pty_name)
+     char pty_name[];
 {
     extern char *ptsname();
     char *ptss;
     int fd;
-
+    
     fd = open("/dev/ptmx", O_RDWR);
     if (fd < 0) return fd;
     if (grantpt(fd) == -1) return -1;
     if (unlockpt(fd) == -1) return -1;
     if (!(ptss = ptsname(fd))) return -1;
-    safeStrCpy(pty_name, ptss, sizeof(pty_name)/sizeof(pty_name[0]));
+    strcpy(pty_name, ptss);
     return fd;
 }
 
@@ -147,15 +143,15 @@ PseudoTTY (char pty_name[])
 #if HAVE__GETPTY
 /* This code is for IRIX */
 
-int
-PseudoTTY (char pty_name[])
+int PseudoTTY(pty_name)
+     char pty_name[];
 {
     int fd;
     char *ptyn;
 
     ptyn = _getpty(&fd, O_RDWR, 0600, 0);
     if (ptyn == NULL) return -1;
-    safeStrCpy(pty_name, ptyn, sizeof(pty_name)/sizeof(pty_name[0]));
+    strcpy(pty_name, ptyn);
     return fd;
 }
 
@@ -163,15 +159,15 @@ PseudoTTY (char pty_name[])
 #if HAVE_LIBSEQ
 /* This code is for Sequent DYNIX/ptx.  Untested. --tpm */
 
-int
-PseudoTTY (char pty_name[])
+int PseudoTTY(pty_name)
+     char pty_name[];
 {
     int fd;
     char *slave, *master;
 
     fd = getpseudotty(&slave, &master);
     if (fd < 0) return fd;
-    safeStrCpy(pty_name, slave, sizeof(pty_name)/sizeof(pty_name[0]));
+    strcpy(pty_name, slave);
     return fd;
 }
 
@@ -186,8 +182,8 @@ PseudoTTY (char pty_name[])
 #define LAST_PTY_LETTER 'z'
 #endif
 
-int
-PseudoTTY (char pty_name[])
+int PseudoTTY(pty_name)
+     char pty_name[];
 {
   struct stat stb;
   register c, i;
@@ -210,7 +206,7 @@ PseudoTTY (char pty_name[])
 #ifdef PTY_NAME_SPRINTF
 	PTY_NAME_SPRINTF
 #else
-	  sprintf (pty_name, "/dev/pty%c%x", c, i);
+	sprintf (pty_name, "/dev/pty%c%x", c, i);
 #endif /* no PTY_NAME_SPRINTF */
 
 #ifdef PTY_OPEN
@@ -234,7 +230,7 @@ PseudoTTY (char pty_name[])
 #ifdef PTY_TTY_NAME_SPRINTF
 	    PTY_TTY_NAME_SPRINTF
 #else
-	      sprintf (pty_name,  "/dev/tty%c%x", c, i);
+            sprintf (pty_name, "/dev/tty%c%x", c, i);
 #endif /* no PTY_TTY_NAME_SPRINTF */
 #ifndef UNIPLUS
 	    if (access (pty_name, 6) != 0)

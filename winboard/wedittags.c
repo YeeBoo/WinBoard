@@ -1,27 +1,25 @@
 /*
  * wedittags.c -- EditTags window for WinBoard
+ * $Id: wedittags.c,v 2.1 2003/10/27 19:21:02 mann Exp $
  *
- * Copyright 1995, 2009, 2010, 2011, 2012, 2013 Free Software Foundation, Inc.
- *
- * Enhancements Copyright 2005 Alessandro Scotti
+ * Copyright 1995 Free Software Foundation, Inc.
  *
  * ------------------------------------------------------------------------
- *
- * GNU XBoard is free software: you can redistribute it and/or modify
+ * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or (at
- * your option) any later version.
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
- * GNU XBoard is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
- * General Public License for more details.
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see http://www.gnu.org/licenses/.  *
- *
- *------------------------------------------------------------------------
- ** See the file ChangeLog for a revision history.  */
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * ------------------------------------------------------------------------
+ */
 
 #include "config.h"
 
@@ -35,16 +33,16 @@
 #include <dlgs.h>
 
 #include "common.h"
+#include "winboard.h"
 #include "frontend.h"
 #include "backend.h"
-#include "winboard.h"
-
-#define _(s) T_(s)
 
 /* Module globals */
-static char *editTagsText, **resPtr;
+static char *editTagsText;
+HWND editTagsDialog = NULL;
 BOOL editTagsUp = FALSE;
 BOOL canEditTags = FALSE;
+int editTagsX, editTagsY, editTagsW, editTagsH;
 
 /* Imports from winboard.c */
 extern HINSTANCE hInst;
@@ -65,23 +63,18 @@ EditTagsDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
   switch (message) {
   case WM_INITDIALOG: /* message: initialize dialog box */
     /* Initialize the dialog items */
-    Translate(hDlg, DLG_EditTags);
-   hwndText = GetDlgItem(hDlg, OPT_TagsText);
+    hwndText = GetDlgItem(hDlg, OPT_TagsText);
     SendMessage(hwndText, WM_SETFONT, 
       (WPARAM)font[boardSize][EDITTAGS_FONT]->hf, MAKELPARAM(FALSE, 0));
     SetDlgItemText(hDlg, OPT_TagsText, editTagsText);
     EnableWindow(GetDlgItem(hDlg, OPT_TagsCancel), canEditTags);
     EnableWindow(GetDlgItem(hDlg, OPT_EditTags), !canEditTags);
     SendMessage(hwndText, EM_SETREADONLY, !canEditTags, 0);
-    if (bookUp) {
-      SetWindowText(hDlg, _("Edit Book"));
-      SetFocus(hwndText);
-    } else
     if (canEditTags) {
-      SetWindowText(hDlg, _("Edit Tags"));
+      SetWindowText(hDlg, "Edit Tags");
       SetFocus(hwndText);
     } else {
-      SetWindowText(hDlg, _("Tags"));
+      SetWindowText(hDlg, "Tags");
       SetFocus(GetDlgItem(hDlg, IDOK));
     }
     if (!editTagsDialog) {
@@ -90,18 +83,18 @@ EditTagsDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
       GetClientRect(hDlg, &rect);
       sizeX = rect.right;
       sizeY = rect.bottom;
-      if (wpTags.x != CW_USEDEFAULT && wpTags.y != CW_USEDEFAULT &&
-	  wpTags.width != CW_USEDEFAULT && wpTags.height != CW_USEDEFAULT) {
+      if (editTagsX != CW_USEDEFAULT && editTagsY != CW_USEDEFAULT &&
+	  editTagsW != CW_USEDEFAULT && editTagsH != CW_USEDEFAULT) {
 	WINDOWPLACEMENT wp;
-	EnsureOnScreen(&wpTags.x, &wpTags.y, 0, 0);
+	EnsureOnScreen(&editTagsX, &editTagsY);
 	wp.length = sizeof(WINDOWPLACEMENT);
 	wp.flags = 0;
 	wp.showCmd = SW_SHOW;
 	wp.ptMaxPosition.x = wp.ptMaxPosition.y = 0;
-	wp.rcNormalPosition.left = wpTags.x;
-	wp.rcNormalPosition.right = wpTags.x + wpTags.width;
-	wp.rcNormalPosition.top = wpTags.y;
-	wp.rcNormalPosition.bottom = wpTags.y + wpTags.height;
+	wp.rcNormalPosition.left = editTagsX;
+	wp.rcNormalPosition.right = editTagsX + editTagsW;
+	wp.rcNormalPosition.top = editTagsY;
+	wp.rcNormalPosition.bottom = editTagsY + editTagsH;
 	SetWindowPlacement(hDlg, &wp);
 
 	GetClientRect(hDlg, &rect);
@@ -126,16 +119,14 @@ EditTagsDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 	GetWindowText(hwndText, str, len + 1);
 	p = q = str;
 	while (*q) {
-	  if (*q == '\r')
+	  if (*q == '\r'|| *q == '\n')
 	    q++;
 	  else
 	    *p++ = *q++;
 	}
-	*p = NULLCHAR; err = 0;
-        if(resPtr) *resPtr = strdup(str); else
-	if(bookUp) SaveToBook(str); else
+	*p = NULLCHAR;
 	err = ReplaceTags(str, &gameInfo);
-	if (err) DisplayError(_("Error replacing tags."), err);
+	if (err) DisplayError("Error replacing tags.", err);
 
 	free(str);
       }
@@ -177,8 +168,8 @@ EditTagsDialog(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 VOID TagsPopDown(void)
 {
   if (editTagsDialog) ShowWindow(editTagsDialog, SW_HIDE);
-  CheckMenuItem(GetMenu(hwndMain), IDM_Tags, MF_UNCHECKED);
-  editTagsUp = bookUp = FALSE;
+  CheckMenuItem(GetMenu(hwndMain), IDM_EditTags, MF_UNCHECKED);
+  editTagsUp = FALSE;
 }
 
 
@@ -207,11 +198,10 @@ VOID EitherTagsPopUp(char *tags, char *msg, BOOLEAN edit)
   editTagsText = p;
   canEditTags = edit;
   
-  CheckMenuItem(GetMenu(hwndMain), IDM_Tags, MF_CHECKED);
+  CheckMenuItem(GetMenu(hwndMain), IDM_EditTags, MF_CHECKED);
   if (editTagsDialog) {
     SendMessage(editTagsDialog, WM_INITDIALOG, 0, 0);
     ShowWindow(editTagsDialog, SW_SHOW);
-    if(bookUp) SetFocus(hwndMain);
   } else {
     lpProc = MakeProcInstance((FARPROC)EditTagsDialog, hInst);
     CreateDialog(hInst, MAKEINTRESOURCE(DLG_EditTags),
@@ -228,15 +218,14 @@ VOID TagsPopUp(char *tags, char *msg)
   SetActiveWindow(hwnd);
 }
 
-VOID EditTagsPopUp(char *tags, char **dest)
+VOID EditTagsPopUp(char *tags)
 {
-  resPtr = dest;
   EitherTagsPopUp(tags, "", TRUE);
 }
 
 VOID EditTagsProc()
 {
-  if (editTagsUp && !bookUp) {
+  if (editTagsUp) {
     TagsPopDown();
   } else {
     EditTagsEvent();
